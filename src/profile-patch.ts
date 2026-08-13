@@ -6,36 +6,37 @@
  * structure we do not understand, so a generic parse → stringify round trip
  * is forbidden. This writer only:
  *
- * - recognizes TOP-LEVEL `- id: <exact id>` rows (column 0); a nested id
- *   inside an `insert:` block is never touched;
+ * - recognizes TOP-LEVEL `- id: <exact id>` rows (column 0) as the override
+ *   target; an id inside a nested `insert:` block is never edited in place;
  * - adds or replaces only that row's OWN `disabled:` field (at the row's
  *   observed child indentation);
  * - leaves `config`, `name`, other ids, comments, `!!js` and the original
  *   line endings untouched;
- * - appends a minimal `- id: <id>` / `  disabled: …` override when the row
- *   does not exist yet (and refuses when the id already appears nested —
- *   creating a duplicate patch row is never safe);
+ * - appends a minimal name-less `- id: <id>` / `  disabled: …` override when
+ *   the row does not exist. Official patch semantics merge an override's keys
+ *   onto the composed entry by id (a name-less row skips the Loader's
+ *   name-mismatch check), so this also correctly targets a row this same
+ *   file inserted earlier — the nested block stays byte-identical;
  * - writes through a sibling temp file + atomic rename, with an optimistic
  *   concurrency re-read immediately before the rename: an external edit
  *   since our first read refuses the write instead of being overwritten.
  *
  * Line endings: the EOL style is detected from the file's first newline and
  * used for inserted lines; existing lines are never rewritten.
+ *
+ * The read → render → verify → commit cycle runs under the official
+ * `@deepseek-ai/dsh-atomic-write` cross-process writer lock
+ * (`withFileLock`), and the commit itself is that package's
+ * `writeFileAtomic` (random-suffix sibling + rename). The optimistic
+ * concurrency re-read happens INSIDE the lock, immediately before the
+ * commit: an external edit since our locked read refuses the write instead
+ * of being overwritten, and two of our own writers can never interleave.
  */
 
-import { randomBytes } from 'node:crypto'
-import {
-  closeSync,
-  existsSync,
-  fsyncSync,
-  openSync,
-  readFileSync,
-  renameSync,
-  unlinkSync,
-  writeFileSync,
-} from 'node:fs'
+import { existsSync, readFileSync, statSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
+import { withFileLock, writeFileAtomic } from '@deepseek-ai/dsh-atomic-write'
 
 /** Thrown when the patch file changed between our read and our write. */
 export class ConcurrentEditError extends Error {
@@ -194,78 +195,54 @@ export function profilePatchPath(profile = 'web'): string {
   return join(dshHomeDir(), 'profiles', profile, 'cordis.patch.yml')
 }
 
-/**
- * Write `content` to `file` atomically: sibling temp file, fsync, rename.
- * Never leaves a half-written target file behind.
- */
-export function writeTextAtomic(file: string, content: string): void {
-  const temp = `${file}.builtin-toggles-${process.pid}-${randomBytes(4).toString('hex')}.tmp`
-  writeFileSync(temp, content, 'utf8')
-  try {
-    // Open + fsync the temp before rename so the rename never publishes a
-    // partially-flushed page (best effort; the rename itself is the atomic step).
-    const fd = openForFsync(temp)
-    fsyncFd(fd)
-    closeFd(fd)
-    renameSync(temp, file)
-  } catch (error) {
-    try {
-      unlinkQuiet(temp)
-    } catch {
-      // best effort cleanup
-    }
-    throw error
-  }
-}
-
-function openForFsync(path: string): number {
-  return openSync(path, 'r')
-}
-function fsyncFd(fd: number): void {
-  fsyncSync(fd)
-}
-function closeFd(fd: number): void {
-  closeSync(fd)
-}
-function unlinkQuiet(path: string): void {
-  unlinkSync(path)
-}
-
 export interface ApplyDeps {
-  /** Read the current file content. */
+  /** Read the current file content (called under the lock). */
   read: (file: string) => string
-  /** Atomically replace the file content. */
-  writeAtomic: (file: string, content: string) => void
+  /** Atomically replace the file content, preserving the stated mode. */
+  writeAtomic: (file: string, content: string, mode: number) => Promise<void>
+  /** Hold the cross-process writer lock for `file` around one operation. */
+  lock: <T>(file: string, operation: () => Promise<T>) => Promise<T>
 }
 
 const realDeps: ApplyDeps = {
   read: (file) => readFileSync(file, 'utf8'),
-  writeAtomic: writeTextAtomic,
+  writeAtomic: (file, content, mode) => writeFileAtomic(file, content, { mode }),
+  lock: withFileLock,
 }
 
 /**
- * Persist one `disabled` override with optimistic concurrency:
- * read → render → re-read → refuse on mismatch → atomic replace.
- * @returns what changed; throws ConcurrentEditError / PatchError / ENOENT.
+ * Persist one `disabled` override under the official writer lock, with
+ * optimistic concurrency: lock → read → render → re-read → refuse on
+ * mismatch → atomic replace. The re-read happens inside the lock so two of
+ * our own writers can never lose each other's committed content, and an
+ * external (non-locking) edit since our locked read refuses the write
+ * instead of being overwritten.
+ * @returns what changed; throws ConcurrentEditError / PatchError / fs errors.
  */
-export function applyDisabledOverride(
+export async function applyDisabledOverride(
   file: string,
   id: string,
   disabled: boolean,
   deps: ApplyDeps = realDeps,
-): { changed: boolean; createdRow: boolean } {
+): Promise<{ changed: boolean; createdRow: boolean }> {
   if (!existsSync(file)) {
     throw new PatchError(`builtin-toggles: profile patch missing: ${file}; refusing to create it implicitly`)
   }
-  const original = deps.read(file)
-  const rendered = renderDisabledPatch(original, id, disabled)
-  if (!rendered.changed) return { changed: false, createdRow: false }
-  // Optimistic concurrency: refuse (not overwrite) an external edit that
-  // landed between our read and the replace.
-  const current = deps.read(file)
-  if (current !== original) {
-    throw new ConcurrentEditError(file)
-  }
-  deps.writeAtomic(file, rendered.content)
-  return { changed: true, createdRow: rendered.createdRow }
+  // The lock's sibling (<file>.lock) lives next to the target, so the parent
+  // directory must exist — it does (the file exists). Preserve the existing
+  // file mode through the atomic replace.
+  const mode = statSync(file).mode & 0o777
+  return deps.lock(file, async () => {
+    const original = deps.read(file)
+    const rendered = renderDisabledPatch(original, id, disabled)
+    if (!rendered.changed) return { changed: false, createdRow: false }
+    // Optimistic concurrency: refuse (not overwrite) an external edit that
+    // landed between our locked read and the replace.
+    const current = deps.read(file)
+    if (current !== original) {
+      throw new ConcurrentEditError(file)
+    }
+    await deps.writeAtomic(file, rendered.content, mode)
+    return { changed: true, createdRow: rendered.createdRow }
+  })
 }

@@ -43,6 +43,9 @@
     "@deepseek-ai/cordis": "^4.0.1",
     "react": "^18.2.0"
   },
+  "dependencies": {
+    "@deepseek-ai/dsh-atomic-write": "^0.1.0-rc.6"
+  },
   "devDependencies": {
     "@deepseek-ai/cordis": "^4.0.1",
     "@deepseek-ai/cordis-plugin-loader": "^1.0.2",

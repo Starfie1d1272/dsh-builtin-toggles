@@ -44,15 +44,15 @@ export interface MutateDeps {
   findEntry: (id: string) => EntryHandle | undefined
   /**
    * Persist the override; returns whether the file changed.
-   * Throws ConcurrentEditError / PatchError / fs errors.
+   * Rejects with ConcurrentEditError / PatchError / fs errors.
    */
-  persist: (file: string, id: string, disabled: boolean) => { changed: boolean }
+  persist: (file: string, id: string, disabled: boolean) => Promise<{ changed: boolean }>
 }
 
 /** Wire deps used by the real route handler. */
 export function realPersist(): MutateDeps['persist'] {
-  return (file, id, disabled) => {
-    const result = applyDisabledOverride(file, id, disabled)
+  return async (file, id, disabled) => {
+    const result = await applyDisabledOverride(file, id, disabled)
     return { changed: result.changed }
   }
 }
@@ -113,7 +113,7 @@ export async function runToggle(
   // Persistence second: survives restart; on failure roll the runtime back.
   let persisted = false
   try {
-    persisted = deps.persist(deps.patchFile, id, disabled).changed
+    persisted = (await deps.persist(deps.patchFile, id, disabled)).changed
   } catch (error) {
     const rollbackError = await rollbackRuntime(entry!, previousOwn)
     if (rollbackError !== undefined) {

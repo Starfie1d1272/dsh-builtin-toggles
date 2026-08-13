@@ -5,7 +5,7 @@
  */
 
 import assert from 'node:assert/strict'
-import { mkdtempSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, it } from 'node:test'
@@ -14,6 +14,7 @@ import {
   ConcurrentEditError,
   PatchError,
   renderDisabledPatch,
+  type ApplyDeps,
 } from '../src/profile-patch.ts'
 
 const TEMPLATE = `# Your patch layer for this dsh profile, applied after every bundle layer:
@@ -128,7 +129,7 @@ describe('renderDisabledPatch', () => {
   })
 })
 
-describe('applyDisabledOverride (fs layer)', () => {
+describe('applyDisabledOverride (official lock + atomic write)', () => {
   function tempFile(content: string): string {
     const dir = mkdtempSync(join(tmpdir(), 'builtin-toggles-'))
     const file = join(dir, 'cordis.patch.yml')
@@ -136,43 +137,61 @@ describe('applyDisabledOverride (fs layer)', () => {
     return file
   }
 
-  it('writes through a sibling temp + atomic rename (no partial file on success)', () => {
+  it('commits through the official writer lock + atomic replace (no litter left behind)', async () => {
     const file = tempFile('[]\n')
-    const result = applyDisabledOverride(file, 'ui-goal', true)
+    const result = await applyDisabledOverride(file, 'ui-goal', true)
     assert.equal(result.changed, true)
     assert.equal(result.createdRow, true)
     assert.equal(readFileSync(file, 'utf8'), '- id: ui-goal\n  disabled: true\n')
-    // no temp litter
+    // no temp or lock siblings left
     const dir = file.slice(0, file.lastIndexOf('/'))
-    const leftovers = readDir(dir).filter((name) => name.includes('.tmp'))
-    assert.deepEqual(leftovers, [])
+    assert.deepEqual(readDir(dir), ['cordis.patch.yml'])
   })
 
-  it('11. concurrent external edit between read and replace → refuses, does not overwrite', () => {
+  it('preserves the original file mode through the replace', async () => {
+    const file = tempFile('[]\n')
+    const originalMode = statSync(file).mode & 0o777
+    await applyDisabledOverride(file, 'ui-goal', true)
+    assert.equal(statSync(file).mode & 0o777, originalMode)
+  })
+
+  it('two concurrent writers on the same file both land (lock serializes; no lost update)', async () => {
+    const file = tempFile('[]\n')
+    await Promise.all([
+      applyDisabledOverride(file, 'ui-goal', true),
+      applyDisabledOverride(file, 'ui-jobs', true),
+    ])
+    const content = readFileSync(file, 'utf8')
+    assert.ok(content.includes('- id: ui-goal\n  disabled: true\n'), content)
+    assert.ok(content.includes('- id: ui-jobs\n  disabled: true\n'), content)
+  })
+
+  it('11. concurrent external edit between read and replace → refuses, does not overwrite', async () => {
     const file = tempFile('[]\n')
     let reads = 0
-    const deps = {
+    const deps: ApplyDeps = {
       read: () => {
         reads += 1
         return reads === 1 ? '[]\n' : '# externally edited\n- id: ui-jobs\n  disabled: true\n'
       },
-      writeAtomic: () => { assert.fail('must not write on conflict') },
+      writeAtomic: async () => { assert.fail('must not write on conflict') },
+      lock: async (_file, operation) => operation(),
     }
-    assert.throws(() => applyDisabledOverride(file, 'ui-goal', true, deps), ConcurrentEditError)
+    await assert.rejects(() => applyDisabledOverride(file, 'ui-goal', true, deps), ConcurrentEditError)
     // the real file is untouched
     assert.equal(readFileSync(file, 'utf8'), '[]\n')
   })
 
-  it('no-op when the override already matches (no write, no re-read conflict risk)', () => {
+  it('no-op when the override already matches (no write, no re-read conflict risk)', async () => {
     const file = tempFile('- id: ui-goal\n  disabled: true\n')
-    const result = applyDisabledOverride(file, 'ui-goal', true)
+    const result = await applyDisabledOverride(file, 'ui-goal', true)
     assert.equal(result.changed, false)
     assert.equal(readFileSync(file, 'utf8'), '- id: ui-goal\n  disabled: true\n')
   })
 
-  it('missing profile patch → refuses to create it implicitly', () => {
+  it('missing profile patch → refuses to create it implicitly', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'builtin-toggles-'))
-    assert.throws(() => applyDisabledOverride(join(dir, 'nope.yml'), 'ui-goal', true), PatchError)
+    await assert.rejects(() => applyDisabledOverride(join(dir, 'nope.yml'), 'ui-goal', true), PatchError)
   })
 })
 

@@ -11,12 +11,18 @@
  * The only plugin ids this manager may ever toggle.
  *
  * Every entry was admitted against the current official web roster
- * (`@deepseek-ai/dsh-web-app` cordis.patch.yml, 2026-08-13 upstream commit
- * 47f9438): it exists, is an `@deepseek-ai/*` browser (dsh.client) row, is a
- * pure Web UI / presentation contribution, and disabling it breaks neither
- * the Settings shell, connection, API gateway, conversation core, nor any
- * required downstream (consumed optional services only — e.g. ui-deliverables'
- * `chatFileMentions` is read via `ctx.get`, never injected).
+ * (`@deepseek-ai/dsh-web-app` cordis.patch.yml) and its client bundles
+ * (npm 0.1.0-rc.6): it exists, is an `@deepseek-ai/*` browser (dsh.client)
+ * row, is a pure Web UI / presentation contribution, and disabling it breaks
+ * neither the Settings shell, connection, API gateway, conversation core,
+ * nor any required downstream. Admission checks each candidate's PROVIDED
+ * services and their consumers in the installed bundles.
+ *
+ * Narrowed 2026-08: `ui-commands` was REMOVED — its client half provides the
+ * `commandUi` service, consumed by `ui-conversation` (locked core),
+ * `ui-model-selection` and `ui-permission-presets`; toggling it off would
+ * strand those mounts, so it is not a safe leaf. Only further narrowing is
+ * allowed; never expansion.
  *
  * The agent preset plane, core infrastructure, and everything unknown stay
  * locked by default; see LOCKED_IDS / classify().
@@ -28,7 +34,6 @@ export const MANAGEABLE_IDS: readonly string[] = [
   'ui-message-feedback',
   'ui-model-selection',
   'ui-agent-preset',
-  'ui-commands',
   'ui-skill',
   'ui-subagent',
   'ui-trajectory',

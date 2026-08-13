@@ -9,6 +9,10 @@
  *
  * The POST path re-checks every security rule server-side (see policy.ts and
  * mutate.ts); the browser hiding a switch is never the security boundary.
+ * Every request crosses the official-semantics browser-trust fence
+ * (trust.ts), and every mutation is serialized through a process-wide queue
+ * — two browser tabs POSTing at once cannot interleave their runtime updates
+ * or profile-patch writes.
  *
  * No tools are registered, no model-facing service is touched, and nothing
  * in the host composition is modified except the profile patch layer.
@@ -21,6 +25,7 @@ import type {} from '@deepseek-ai/dsh-host-webserver'
 import { runToggle, type EntryHandle } from './mutate.ts'
 import { classifyEntry, type EntryFacts, type SnapshotPlugin } from './policy.ts'
 import { applyDisabledOverride, profilePatchPath } from './profile-patch.ts'
+import { isTrustedRequest } from './trust.ts'
 
 /** Cordis plugin identity. */
 export const name = 'builtin-toggles'
@@ -33,6 +38,24 @@ export const API_PREFIX = '/api/builtin-toggles'
 
 /** Maximum accepted POST body. */
 const MAX_BODY_BYTES = 4096
+
+/**
+ * Process-wide mutation serialization: every POST runs through this queue,
+ * so two browser tabs (or any concurrent callers) can never interleave
+ * runtime updates or profile-patch writes. The official per-file writer lock
+ * (withFileLock) additionally serializes across processes.
+ */
+let mutationQueue: Promise<unknown> = Promise.resolve()
+export function serializeMutation<T>(run: () => Promise<T>): Promise<T> {
+  const next = mutationQueue.then(run, run)
+  mutationQueue = next.then(() => undefined, () => undefined)
+  return next
+}
+
+/** The deployment's non-loopback authorities, per the official trust fence. */
+interface WebRuntimeLike {
+  trustedHosts: string[]
+}
 
 /** Runtime mirror of the Cordis FiberState const enum (no runtime import). */
 const FIBER_PHASE: Record<number, string | null> = {
@@ -76,46 +99,6 @@ export function buildSnapshot(entries: Entry[]): SnapshotPlugin[] {
     plugins.push(classified)
   }
   return plugins
-}
-
-/* ── browser trust fence (DNS-rebinding / cross-site defense) ─────────────── */
-
-function headerValue(headers: IncomingMessage['headers'], name: string): string | undefined {
-  const value = headers[name]
-  return typeof value === 'string' ? value : undefined
-}
-
-function isLoopbackHostname(hostname: string): boolean {
-  return hostname === 'localhost'
-    || hostname === '::1'
-    || hostname === '127.0.0.1'
-    || hostname === '::ffff:127.0.0.1'
-    || /^127\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(hostname)
-}
-
-/**
- * Accept loopback requests outright; for LAN serving, require a same-origin
- * browser marker (Origin matching Host). A rebound page carries an attacker
- * Host here, and a cross-site fetch carries a mismatching Origin — both
- * refuse. This is a defense-in-depth fence for a local UI manager, not auth.
- */
-export function isLocalRequest(req: IncomingMessage): boolean {
-  const host = headerValue(req.headers, 'host')
-  if (host === undefined) return false
-  let authority: URL
-  try {
-    authority = new URL(`http://${host}`)
-  } catch {
-    return false
-  }
-  if (isLoopbackHostname(authority.hostname)) return true
-  const origin = headerValue(req.headers, 'origin')
-  if (origin === undefined) return false
-  try {
-    return new URL(origin).host === host
-  } catch {
-    return false
-  }
 }
 
 /* ── HTTP plumbing ────────────────────────────────────────────────────────── */
@@ -168,8 +151,16 @@ export function apply(ctx: Context): void {
       kind: 'prefix',
       path: API_PREFIX,
       handler: async (req, res) => {
-        if (!isLocalRequest(req)) {
-          sendJson(res, 403, { ok: false, error: 'forbidden', message: 'builtin-toggles: untrusted request origin' })
+        // The deployment's non-loopback authorities, read per request:
+        // `webRuntime.trustedHosts` (LAN IP literals + explicit
+        // --trusted-host values) is provided only after the server binds,
+        // which may be after this plugin's effect runs — a stale capture
+        // would wrongly lock out LAN deployments.
+        const webRuntime = ctx.get('webRuntime') as WebRuntimeLike | undefined
+        const trustedHosts = webRuntime?.trustedHosts ?? []
+
+        if (!isTrustedRequest(req.headers, trustedHosts)) {
+          sendJson(res, 403, { ok: false, error: 'forbidden', message: 'builtin-toggles: untrusted request' })
           return
         }
         const pathname = (req.url ?? '/').split('?')[0] ?? '/'
@@ -190,21 +181,23 @@ export function apply(ctx: Context): void {
           } catch {
             rawBody = undefined // → invalid_body 400 below
           }
-          const result = await runToggle(
+          // One mutation at a time, process-wide: tabs and scripts share the
+          // queue, so runtime updates and patch writes never interleave.
+          const result = await serializeMutation(() => runToggle(
             {
               patchFile: profilePatchPath('web'),
               findEntry: (targetId) => {
                 const entry = findEntryByShortId(ctx, targetId)
                 return entry === undefined ? undefined : entryHandle(entry)
               },
-              persist: (file, targetId, disabled) => {
-                const applied = applyDisabledOverride(file, targetId, disabled)
+              persist: async (file, targetId, disabled) => {
+                const applied = await applyDisabledOverride(file, targetId, disabled)
                 return { changed: applied.changed }
               },
             },
             id,
             rawBody,
-          )
+          ))
           sendJson(res, result.status, result.body)
           return
         }

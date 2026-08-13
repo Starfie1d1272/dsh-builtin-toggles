@@ -8,10 +8,12 @@
 ## 它做什么
 
 - 只读展示当前 Loader 树中的官方内置插件（id / module / enabled / phase）。
-- 对 **明确 allowlisted** 的少量官方 Web UI 插件提供开关：
-  `ui-deliverables`、`ui-jobs`、`ui-goal`、`ui-message-feedback`、`ui-model-selection`、`ui-agent-preset`、`ui-commands`、`ui-skill`、`ui-subagent`、`ui-trajectory`。
+- 对 **明确 allowlisted** 的少量官方 Web UI 插件提供开关（9 个）：
+  `ui-deliverables`、`ui-jobs`、`ui-goal`、`ui-message-feedback`、`ui-model-selection`、`ui-agent-preset`、`ui-skill`、`ui-subagent`、`ui-trajectory`。
+  （`ui-commands` 曾在 v0.1.0 基线 allowlist 中，已在 hardening 中移除：rc.6 中它的 client half 提供 `commandUi` 服务，被 `ui-conversation`、`ui-model-selection`、`ui-permission-presets` 消费，不是安全的独立 leaf。）
 - 其他 `@deepseek-ai/*` 内置插件默认折叠展示，全部锁定（标出锁定原因），不提供开关。
-- 开关同时生效于当前运行时（`entry.update({ disabled })`）与重启之后（profile `cordis.patch.yml` 持久化）。
+- 开关立即生效于 Host 运行时（`entry.update({ disabled })`）并持久化到 profile `cordis.patch.yml`（重启后保持）。
+- **已打开的浏览器页面需要刷新才应用开关**：rc.6 的真实浏览器行为是 Host 状态立即变化，但已加载的 client bundle 不会自动卸载/恢复（真实 headless-browser E2E 已验证，见下）。切换成功后面板会提示“刷新页面后生效”。
 
 ## 它明确不是什么
 
@@ -31,7 +33,7 @@
 4. entry 的 module/package 必须以 `@deepseek-ai/` 开头（即使第三方抢占同名 id 也无法操作），否则 403；
 5. 不能是本插件自身（`builtin-toggles` / `dsh-builtin-toggles`），否则 403。
 
-以下类型永远锁定：loader / Cordis core、modules、connection、api-remotes、client-runtime、cordis-client-runner、ui-theme、locale、ui-layout、ui-sidebar、ui-settings、ui-settings-general、ui-settings-plugins、ui-conversation、ui-input-trigger、ui-tool、plugin-inventory、api-gateway、webserver、web-runtime、client-hmr、storage / session / workspace 等 Host 基础设施，以及 agent preset plane 的 `tool-*` / `skill-*` / compaction / subagent 等模型能力。
+以下类型永远锁定：loader / Cordis core、modules、connection、api-remotes、client-runtime、cordis-client-runner、ui-theme、locale、ui-layout、ui-sidebar、ui-settings、ui-settings-general、ui-settings-plugins、ui-conversation、ui-input-trigger、ui-tool、ui-commands（服务提供者）、plugin-inventory、api-gateway、webserver、web-runtime、client-hmr、storage / session / workspace 等 Host 基础设施，以及 agent preset plane 的 `tool-*` / `skill-*` / compaction / subagent 等模型能力。未知 id 一律锁定（`unlisted`）。
 
 ## 安装
 
@@ -66,8 +68,10 @@ dsh plugin --profile web remove dsh-builtin-toggles
 
 ## 当前兼容的 DSH 版本 / commit
 
-- 验证环境：`dsh 0.1.0-rc.6`（npm `@deepseek-ai/dsh`），web profile。
-- 上游核对 commit：`deepseek-ai/deepseek-harness` `47f943859bef60e4160492346772ded9b24f765a`（2026-08-13）。
+版本说明（区分两层，不要混用）：
+
+- **实际运行 / 构建验证**：npm `@deepseek-ai/dsh` **0.1.0-rc.6**（本机 web profile），client 契约与 Loader/webserver 行为均按 rc.6 的已安装包核对。
+- **公开源码架构交叉核对**：`deepseek-ai/deepseek-harness` `47f943859bef60e4160492346772ded9b24f765a`（2026-08-13）——该 commit 对应 **rc.5 release** 的源码（仓库内 package.json 版本为 0.1.0-rc.5），不是 rc.6 源码；仅用于核对架构与扩展点存在性，实现细节以 rc.6 已安装包为准。
 - 使用的官方扩展点（均已核对存在）：
   - `settings.plugins.tab` slot（`packages/client/ui-settings/src/client/contract/slots.ts`；官方设计笔记 `.agents/notes/implemented/architecture/2026-08-11-plugin-settings-tabs.zh.md`）。
   - Loader `disabled` 配置字段与 profile patch 层（`docs/cordis-tutorial/05-config.zh.md`、`docs/user/develop/basic/publish.zh.md`）。
@@ -81,7 +85,7 @@ dsh plugin --profile web remove dsh-builtin-toggles
 pnpm install
 pnpm typecheck     # tsc --noEmit
 pnpm test          # node --import tsx --test tests/*.spec.ts（policy / patch writer / mutation flow）
-pnpm build         # tsdown → lib/index.mjs + lib/client.js
+pnpm build         # tsdown → lib/index.js (node ESM) + lib/client.js (browser bundle)
 ```
 
 安装到 profile 后可用只读方式确认组合：
@@ -91,6 +95,23 @@ dsh --profile web --dump-config   # 或当前等价的只读组合查看方式
 ```
 
 UI 验证：重启 web 后打开 设置 → 插件 → 内置开关。
+
+### 真实浏览器 E2E（rc.6 实测行为，2026-08）
+
+在隔离 `DSH_HOME` + 独立 web profile + 独立端口（127.0.0.1:3099）上，用真实 headless Chromium（Playwright）对 `ui-goal` 实测：
+
+| 步骤 | 观测 |
+| --- | --- |
+| A 初始 | API snapshot：`disabled:false, phase:active, manageable:true`；页面打开 内置开关 tab 显示开关开启；ui-goal client bundle 已挂载（bundle 注入的 `style[data-plugin=…ui-goal]` 存在） |
+| B UI 关闭 | 点击开关 → API：`disabled:true, phase:null`（Host 运行时立即 dispose fiber）；tab 快照显示已停用 |
+| C 不刷新 | **ui-goal 的 bundle style tag 仍在** → 已打开的页面不会立即卸载 client fiber |
+| D 刷新 | tab 显示已停用；style tag 消失（bundle 已从 boot graph 移除） |
+| E 再开启 | 真实浏览器 same-origin fetch（过信任围栏）→ 200，`runtime:true, persisted:true` |
+| F 不刷新 | style tag 仍不存在 → 已打开页面不会立即恢复 |
+| F2 刷新 | 开关恢复开启，style tag 恢复 |
+| G 重启 | 杀掉隔离实例重启 → snapshot 仍为 `disabled:true`（profile patch 持久化生效）；patch 文件为最小 `- id: ui-goal` / `  disabled: true` override，模板注释原样保留 |
+
+**结论**：rc.6 中 `entry.update({disabled})` 的运行时效果是 Host 侧立即生效，浏览器需要刷新页面才应用 —— 所以本插件不自己造 HMR，toggle 成功后提示“刷新页面后生效”。（"E2E PASS" 仅指上述可观测事实，非官方 test harness。）
 
 ## License
 

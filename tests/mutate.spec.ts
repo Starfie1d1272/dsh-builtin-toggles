@@ -26,7 +26,7 @@ function deps(handle: EntryHandle | undefined, trace: Trace): MutateDeps {
   return {
     patchFile: '/tmp/fake/cordis.patch.yml',
     findEntry: () => handle,
-    persist: (_file, id, disabled) => {
+    persist: async (_file, id, disabled) => {
       trace.persists.push({ id, disabled })
       if (trace.persistError !== undefined) throw trace.persistError
       return { changed: true }
@@ -125,7 +125,7 @@ describe('runToggle', () => {
   it('successful disable + persist where file already matches → persisted:false, still 200', async () => {
     const trace: Trace = { updates: [], persists: [] }
     const depsObj = deps(trackingEntry(trace), trace)
-    depsObj.persist = () => ({ changed: false })
+    depsObj.persist = async () => ({ changed: false })
     const result = await runToggle(depsObj, 'ui-goal', { disabled: true })
     assert.equal(result.status, 200)
     if (result.body.ok) assert.equal(result.body.persisted, false)

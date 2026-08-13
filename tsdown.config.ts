@@ -2,7 +2,8 @@
  * Standalone build for dsh-builtin-toggles, mirroring the official DSH
  * client-bundle contract without depending on the monorepo preset:
  *
- * - Node half: plain ESM library (`lib/index.mjs`) with type declarations.
+ * - Node half: plain ESM library (`lib/index.js` under `"type": "module"`)
+ *   with type declarations.
  *   All @deepseek-ai imports are type-only and erased, so nothing needs to
  *   be external at runtime — the host composition provides `ctx.webServer`
  *   and `ctx.loader`.

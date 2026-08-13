@@ -28,6 +28,7 @@ export type BuiltinTogglesLocaleKey =
   | 'toggleDisable'
   | 'busy'
   | 'toggleFailed'
+  | 'refreshHint'
   | 'reasonSelf'
   | 'reasonCore'
   | 'reasonUnlisted'
@@ -39,7 +40,6 @@ export type BuiltinTogglesLocaleKey =
   | 'descUiMessageFeedback'
   | 'descUiModelSelection'
   | 'descUiAgentPreset'
-  | 'descUiCommands'
   | 'descUiSkill'
   | 'descUiSubagent'
   | 'descUiTrajectory'
@@ -68,6 +68,7 @@ export const zh: Record<BuiltinTogglesLocaleKey, string> = {
   toggleDisable: '停用 {name}',
   busy: '正在应用…',
   toggleFailed: '操作失败：{message}',
+  refreshHint: '已保存。刷新页面后生效。',
   reasonSelf: '自身',
   reasonCore: '核心',
   reasonUnlisted: '未收录',
@@ -79,7 +80,6 @@ export const zh: Record<BuiltinTogglesLocaleKey, string> = {
   descUiMessageFeedback: '在消息操作区展示赞 / 踩反馈。',
   descUiModelSelection: '模型选择器（/model）。',
   descUiAgentPreset: '默认 Agent 预设选择器。',
-  descUiCommands: '“/” 命令面板。',
   descUiSkill: '技能选择器（@ 引用源）。',
   descUiSubagent: '子代理选择器（@ 引用源）。',
   descUiTrajectory: '轨迹面板。',
@@ -109,6 +109,7 @@ export const en: Record<BuiltinTogglesLocaleKey, string> = {
   toggleDisable: 'Disable {name}',
   busy: 'Applying…',
   toggleFailed: 'Toggle failed: {message}',
+  refreshHint: 'Saved. Refresh the page to apply.',
   reasonSelf: 'Self',
   reasonCore: 'Core',
   reasonUnlisted: 'Unlisted',
@@ -120,7 +121,6 @@ export const en: Record<BuiltinTogglesLocaleKey, string> = {
   descUiMessageFeedback: 'Like / dislike feedback in the message action strip.',
   descUiModelSelection: 'Model selector (/model).',
   descUiAgentPreset: 'Default agent preset picker.',
-  descUiCommands: 'The "/" command surface.',
   descUiSkill: 'Skill picker (@ reference source).',
   descUiSubagent: 'Subagent picker (@ reference source).',
   descUiTrajectory: 'Trajectory panel.',

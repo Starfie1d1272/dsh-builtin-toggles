@@ -71,6 +71,15 @@ describe('classifyEntry', () => {
     const row = classifyEntry(facts({ id: 'ui-goal-extra', name: '@deepseek-ai/dsh-client-ui-goal-extra' }))
     assert.equal(row.manageable, false)
   })
+
+  it('ui-commands was narrowed out of the allowlist → locked', () => {
+    // rc.6: ui-commands provides `commandUi`, consumed by ui-conversation
+    // (locked core), ui-model-selection and ui-permission-presets — toggling
+    // it off would strand those mounts, so it must never be manageable.
+    assert.equal(MANAGEABLE.has('ui-commands'), false)
+    const row = classifyEntry(facts({ id: 'ui-commands', name: '@deepseek-ai/dsh-client-ui-commands' }))
+    assert.equal(row.manageable, false)
+  })
 })
 
 describe('checkMutation (server-side POST gate)', () => {

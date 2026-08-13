@@ -1,5 +1,4 @@
 import { LoadHookContext } from "node:module";
-import { IncomingMessage } from "node:http";
 import { Context, Fiber, Inject, Service } from "@deepseek-ai/cordis";
 //#region node_modules/.pnpm/@deepseek-ai+cosmokit@1.8.2/node_modules/@deepseek-ai/cosmokit/lib/types/misc.d.ts
 /** String/symbol keyed dictionary type. */
@@ -305,16 +304,10 @@ declare const name = "builtin-toggles";
 declare const inject: string[];
 /** The same-origin API prefix. */
 declare const API_PREFIX = "/api/builtin-toggles";
+declare function serializeMutation<T>(run: () => Promise<T>): Promise<T>;
 /** Snapshot rows: manageable + official + self (external packages stay invisible). */
 declare function buildSnapshot(entries: Entry[]): SnapshotPlugin[];
-/**
- * Accept loopback requests outright; for LAN serving, require a same-origin
- * browser marker (Origin matching Host). A rebound page carries an attacker
- * Host here, and a cross-site fetch carries a mismatching Origin — both
- * refuse. This is a defense-in-depth fence for a local UI manager, not auth.
- */
-declare function isLocalRequest(req: IncomingMessage): boolean;
 /** Register the same-origin API; runs for the lifetime of the fiber. */
 declare function apply(ctx: Context): void;
 //#endregion
-export { API_PREFIX, apply, buildSnapshot, inject, isLocalRequest, name };
+export { API_PREFIX, apply, buildSnapshot, inject, name, serializeMutation };

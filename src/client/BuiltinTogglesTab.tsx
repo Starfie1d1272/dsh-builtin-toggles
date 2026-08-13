@@ -162,7 +162,6 @@ const DESCRIPTION: Record<string, BuiltinTogglesLocaleKey> = {
   'ui-message-feedback': 'descUiMessageFeedback',
   'ui-model-selection': 'descUiModelSelection',
   'ui-agent-preset': 'descUiAgentPreset',
-  'ui-commands': 'descUiCommands',
   'ui-skill': 'descUiSkill',
   'ui-subagent': 'descUiSubagent',
   'ui-trajectory': 'descUiTrajectory',
@@ -179,6 +178,7 @@ export function BuiltinTogglesTab({ t }: BuiltinTogglesTabProps): JSX.Element {
   const [view, setView] = useState<ViewState>({ status: 'loading' })
   const [busyId, setBusyId] = useState<string | null>(null)
   const [toggleError, setToggleError] = useState<string | null>(null)
+  const [notice, setNotice] = useState<string | null>(null)
   const [showLocked, setShowLocked] = useState(false)
   const [attempt, setAttempt] = useState(0)
   const queue = useRef<Promise<void>>(Promise.resolve())
@@ -205,6 +205,8 @@ export function BuiltinTogglesTab({ t }: BuiltinTogglesTabProps): JSX.Element {
     const run = async (): Promise<void> => {
       setBusyId(id)
       setToggleError(null)
+      setNotice(null)
+      let succeeded = false
       try {
         const res = await fetch(`${API}/${encodeURIComponent(id)}`, {
           method: 'POST',
@@ -215,6 +217,7 @@ export function BuiltinTogglesTab({ t }: BuiltinTogglesTabProps): JSX.Element {
           const data = (await res.json().catch(() => null)) as { message?: string } | null
           throw new Error(data?.message ?? `HTTP ${res.status}`)
         }
+        succeeded = true
       } catch (error) {
         setToggleError(error instanceof Error ? error.message : String(error))
       } finally {
@@ -222,10 +225,14 @@ export function BuiltinTogglesTab({ t }: BuiltinTogglesTabProps): JSX.Element {
         // The server is the authority: re-read the snapshot on success AND on
         // failure so the UI never shows optimistic state that did not stick.
         await load(true)
+        // rc.6 behavior (verified in real-browser E2E): the Host state
+        // changes immediately, but an already-open page keeps its loaded
+        // client bundle — the effect lands on the next page load.
+        if (succeeded) setNotice(t('refreshHint'))
       }
     }
     queue.current = queue.current.then(run, run)
-  }, [load])
+  }, [load, t])
 
   if (view.status === 'loading') {
     return (
@@ -255,6 +262,11 @@ export function BuiltinTogglesTab({ t }: BuiltinTogglesTabProps): JSX.Element {
       <p style={introStyle}>{t('intro')}</p>
       {toggleError !== null ? (
         <p style={errorStyle} role="alert">{t('toggleFailed', { message: toggleError })}</p>
+      ) : null}
+      {notice !== null ? (
+        <p style={{ ...statusLineStyle, color: 'var(--dsw-alias-state-success-primary)' }} role="status">
+          {notice}
+        </p>
       ) : null}
 
       <h2 style={headingStyle}>{t('manageableHeading')}</h2>

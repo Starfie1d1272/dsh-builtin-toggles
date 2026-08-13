@@ -35,8 +35,10 @@ general plugin manager.
    design: it only touches a top-level `- id: <exact id>` row's own
    `disabled:` field, never nested `insert:` ids, never `config`/`name`,
    never comments, `!!js` expressions, or unrelated rows, and it preserves
-   the file's LF/CRLF style. Writes go through a sibling temp file + atomic
-   rename with an optimistic-concurrency re-read (an external edit refuses
+   the file's LF/CRLF style. The whole read → render → verify → commit cycle
+   runs under the official `@deepseek-ai/dsh-atomic-write` writer lock
+   (`withFileLock`) and commits via `writeFileAtomic`, with an
+   optimistic-concurrency re-read inside the lock (an external edit refuses
    the write with 409 instead of being overwritten). Never replace this with
    a generic YAML parse → stringify round trip.
 
@@ -47,7 +49,10 @@ general plugin manager.
   atomic fs layer).
 - `src/mutate.ts` — POST orchestration with runtime-first order and rollback
   (pure, dependency-injected).
-- `src/index.ts` — host plugin: same-origin API routes, trust fence.
+- `src/index.ts` — host plugin: same-origin API routes, trust fence wiring,
+  process-wide mutation serialization.
+- `src/trust.ts` — browser-trust fence replicating the official /api fence
+  semantics (Host + sec-fetch-site + Origin), fed by `webRuntime.trustedHosts`.
 - `src/client/` — browser half: `settings.plugins.tab` registration, tab
   component, zh/en dictionaries.
 - `tests/` — node:test specs for policy, patch writer, mutation flow.
@@ -57,7 +62,7 @@ general plugin manager.
 ## Commands
 
 - `pnpm install`
-- `pnpm build` — tsdown (node half → `lib/index.mjs`, browser half →
+- `pnpm build` — tsdown (node half → `lib/index.js` ESM, browser half →
   `lib/client.js`)
 - `pnpm typecheck` — `tsc --noEmit`
 - `pnpm test` — `node --import tsx --test tests/*.spec.ts`
@@ -69,7 +74,13 @@ general plugin manager.
   invent a different client loading mechanism.
 - Client registrations use the official `settings.plugins.tab` slot — never
   a new `settings.section`.
-- One toggle mutation at a time (client-side serialization); the server is
-  the authority and the UI re-reads snapshots after every attempt.
+- Mutations are serialized twice: a client-side queue per tab AND a
+  process-wide host queue (all tabs), plus the official per-file writer lock
+  across processes; the server is the authority and the UI re-reads
+  snapshots after every attempt.
+- Toggle effects are HOST-side immediately; an already-open browser page
+  applies them only after a refresh (rc.6 behavior, verified by real
+  headless-browser E2E). Do not build custom HMR; the tab shows a
+  "refresh to apply" hint after a successful toggle.
 - No tools, no MCP, no model prompt injection, no third-party plugin
   management. Keep the scope exactly as small as the README describes.
