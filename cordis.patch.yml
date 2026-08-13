@@ -1,0 +1,7 @@
+# dsh-builtin-toggles bundle layer: mounts the plugin's own loader row.
+# The row is not manageable through the plugin's own API (self is always
+# locked); this row exists so the host half (API routes) and the browser
+# half (Settings → Plugins → Built-ins tab) are part of the composition.
+- insert:
+    - id: builtin-toggles
+      name: 'dsh-builtin-toggles'
