@@ -12,6 +12,8 @@ export type CompatibilityFindingCode = 'missing_expected_entry' | 'new_official_
 export interface RuntimeEntryEvidence {
   id: string
   packageName: string
+  /** False means Loader exposed an inject shape this inspector cannot compare. */
+  declaredInjectKnown?: boolean
   declaredInject: readonly string[] | null
 }
 
@@ -53,7 +55,8 @@ function canonicalInject(value: readonly string[] | null): readonly string[] | n
   return value === null ? null : [...new Set(value)].sort()
 }
 
-function sameInject(left: readonly string[] | null, right: readonly string[]): boolean {
+function sameInject(left: readonly string[] | null, known: boolean, right: readonly string[] | null): boolean {
+  if (!known || left === null || right === null) return known && left === right
   const canonicalLeft = canonicalInject(left)
   const canonicalRight = canonicalInject(right)
   return canonicalLeft !== null && canonicalLeft.length === canonicalRight!.length
@@ -123,7 +126,7 @@ export function evaluateCompatibility(
       continue
     }
     const declaredInject = reviewed.serviceEvidence.find((evidence) => evidence.kind === 'declared-inject')
-    if (declaredInject !== undefined && !sameInject(entry.declaredInject, declaredInject.expectedServices)) {
+    if (declaredInject !== undefined && !sameInject(entry.declaredInject, entry.declaredInjectKnown !== false, declaredInject.expectedServices)) {
       findings.push({ scope: 'entry', code: 'declared_inject_changed', id: reviewed.id, expected: declaredInject.expectedServices, observed: entry.declaredInject })
       driftedCount += 1
       continue

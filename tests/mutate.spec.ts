@@ -6,11 +6,15 @@ import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 import { runToggle, type EntryHandle, type MutateDeps } from '../src/mutate.ts'
 import { ConcurrentEditError } from '../src/profile-patch.ts'
+import { REVIEWED_DSH_WEB_BASELINE } from '../src/evidence.ts'
+import type { MutationAction } from '../src/policy.ts'
 
 function entry(overrides: Partial<EntryHandle> = {}): EntryHandle {
   return {
     facts: { id: 'ui-goal', name: '@deepseek-ai/dsh-client-ui-goal', disabled: false, phase: 'active' },
     ownDisabled: undefined,
+    declaredInject: null,
+    declaredInjectKnown: true,
     update: async () => {},
     ...overrides,
   }
@@ -18,16 +22,18 @@ function entry(overrides: Partial<EntryHandle> = {}): EntryHandle {
 
 interface Trace {
   updates: (boolean | null)[]
-  persists: { id: string; disabled: boolean }[]
+  persists: { id: string; action: MutationAction }[]
   persistError?: unknown
 }
 
 function deps(handle: EntryHandle | undefined, trace: Trace): MutateDeps {
   return {
     patchFile: '/tmp/fake/cordis.patch.yml',
-    findEntry: () => handle,
-    persist: async (_file, id, disabled) => {
-      trace.persists.push({ id, disabled })
+    listEntries: () => handle === undefined ? [] : [handle],
+    eligibilityBaseline: [REVIEWED_DSH_WEB_BASELINE.find((candidate) => candidate.id === 'ui-goal')!],
+    profilePreflight: () => ({ status: 'writable' }),
+    persist: async (_file, id, action) => {
+      trace.persists.push({ id, action })
       if (trace.persistError !== undefined) throw trace.persistError
       return { changed: true }
     },
@@ -77,10 +83,66 @@ describe('runToggle', () => {
     const result = await runToggle(deps(handle, trace), 'ui-goal', { disabled: true })
     assert.equal(result.status, 200)
     if (result.status === 200) {
-      assert.deepEqual(result.body, { ok: true, id: 'ui-goal', disabled: true, runtime: true, persisted: true })
+      assert.deepEqual(result.body, { ok: true, id: 'ui-goal', action: 'force-disable', disabled: true, runtime: true, persisted: true })
     }
     assert.deepEqual(trace.updates, [true])
-    assert.deepEqual(trace.persists, [{ id: 'ui-goal', disabled: true }])
+    assert.deepEqual(trace.persists, [{ id: 'ui-goal', action: 'force-disable' }])
+  })
+
+  it('supports explicit force enable and restores inheritance through persisted profile recomposition', async () => {
+    const enableTrace: Trace = { updates: [], persists: [] }
+    const enable = await runToggle(deps(trackingEntry(enableTrace), enableTrace), 'ui-goal', { action: 'force-enable' })
+    assert.equal(enable.status, 200)
+    assert.deepEqual(enableTrace.updates, [false])
+    assert.deepEqual(enableTrace.persists, [{ id: 'ui-goal', action: 'force-enable' }])
+
+    const restoreTrace: Trace = { updates: [], persists: [] }
+    const restore = await runToggle(deps(trackingEntry(restoreTrace), restoreTrace), 'ui-goal', { action: 'restore-inheritance' })
+    assert.equal(restore.status, 200)
+    if (restore.body.ok) assert.equal(restore.body.disabled, null)
+    // `Entry.update({ disabled: null })` cannot recompose lower profile layers.
+    assert.deepEqual(restoreTrace.updates, [])
+    assert.deepEqual(restoreTrace.persists, [{ id: 'ui-goal', action: 'restore-inheritance' }])
+  })
+
+  for (const reason of [
+    'profile_patch_missing',
+    'profile_patch_unreadable',
+    'duplicate_top_level_row',
+    'duplicate_disabled_field',
+    'non_literal_disabled',
+  ] as const) {
+    it(`profile preflight ${reason} → 409 before runtime update or persistence`, async () => {
+      const trace: Trace = { updates: [], persists: [] }
+      const testDeps = deps(trackingEntry(trace), trace)
+      testDeps.profilePreflight = () => ({ status: 'unwritable', reason })
+      const result = await runToggle(testDeps, 'ui-goal', { action: 'force-disable' })
+      assert.equal(result.status, 409)
+      assert.equal(result.body.error, 'mutation_ineligible')
+      assert.deepEqual(trace.updates, [])
+      assert.deepEqual(trace.persists, [])
+    })
+  }
+
+  it('refuses package mismatch and duplicate target before runtime or persistence', async () => {
+    const mismatchTrace: Trace = { updates: [], persists: [] }
+    const badDeps = deps(trackingEntry(mismatchTrace), mismatchTrace)
+    const bad = badDeps.listEntries()[0]!
+    bad.facts = { ...bad.facts, name: '@deepseek-ai/dsh-client-ui-goal-v2' }
+    const mismatchResult = await runToggle(badDeps, 'ui-goal', { disabled: true })
+    assert.equal(mismatchResult.status, 409)
+    assert.deepEqual(mismatchTrace.updates, [])
+    assert.deepEqual(mismatchTrace.persists, [])
+
+    const duplicateTrace: Trace = { updates: [], persists: [] }
+    const duplicateDeps = deps(trackingEntry(duplicateTrace), duplicateTrace)
+    // A direct list is clearer than relying on a loader's normal uniqueness guarantee.
+    const target = trackingEntry(duplicateTrace)
+    duplicateDeps.listEntries = () => [target, { ...target }]
+    const duplicateResult = await runToggle(duplicateDeps, 'ui-goal', { disabled: true })
+    assert.equal(duplicateResult.status, 409)
+    assert.deepEqual(duplicateTrace.updates, [])
+    assert.deepEqual(duplicateTrace.persists, [])
   })
 
   it('persistence failure → runtime rolled back to previous own value, error surfaced', async () => {
@@ -92,7 +154,7 @@ describe('runToggle', () => {
     assert.equal(result.body.error, 'persist_failed')
     // update(true) then rollback update(false)
     assert.deepEqual(trace.updates, [true, false])
-    assert.deepEqual(trace.persists, [{ id: 'ui-goal', disabled: true }])
+    assert.deepEqual(trace.persists, [{ id: 'ui-goal', action: 'force-disable' }])
   })
 
   it('persistence failure with no previous own value → rollback removes the field (null)', async () => {

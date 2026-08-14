@@ -7,9 +7,29 @@ external, or unreviewed. Its stable machine contract starts with
 
 The response contains a semantic capability inventory, the reviewed DSH Web
 baseline, and a compatibility summary. It deliberately contains no localized
-labels and no field that authorizes mutation. `policy.status` is a projection
-of the existing server policy; `POST` still independently checks the explicit
-allowlist, package scope, request trust, serialization, and profile writer.
+labels. `policy.status` is only a projection of the explicit allowlist. The
+server also returns `configuration` (profile override state, independent
+profile-persistence preflight, effective Loader disabled result, and separately
+labelled Agent Preset ownership) and a
+server-computed `mutationEligibility` for every row. The browser never derives
+eligibility from compatibility or catalog text.
+
+`configuration.profileOverride.state` is one of `inherited`,
+`explicitly-enabled`, or `explicitly-disabled`. It is deliberately distinct
+from Loader lifecycle and `effectiveDisabled`; it describes only the Web
+profile patch's literal top-level `disabled` override. Agent Preset ownership
+is a different management plane and is reported as `agentPresetManaged`, not
+mislabelled as a profile override. A malformed/ambiguous profile override is
+shown as `unavailable` and is never writable.
+
+`configuration.profilePersistence` is separate from that state: a missing
+profile patch is still semantically `inherited`, but reports
+`status: "unwritable"` because this plugin will not create it implicitly. The
+same conservative preflight is used by GET eligibility and POST before any
+Loader update. It rejects known writer refusal conditions (missing/unreadable
+file, duplicate target row or `disabled` field, and non-literal `disabled`),
+while the final writer still repeats its lock, atomic write, and optimistic
+concurrency checks at commit time.
 
 Compatibility is `verified` only when a stable, Host-owned runtime release
 identity matches the reviewed rc.6 target **and** every evaluated structural
@@ -44,11 +64,45 @@ snapshot; it therefore does not upgrade the patch provenance. Version equality
 alone remains insufficient: runtime composition, exact module identity, and
 declared injection evidence are checked.
 
-The capability baseline also carries bounded audit observations. Nine current
-safe UI leaves are recorded as such, while `ui-commands` records its observed
-`commandUi` service and known consumers. Any provides/consumers not established
-by that audit remain `unknown`; evidence never grants mutation authority.
+## Mutation eligibility
 
-PR 1 is inspection only. Compatibility results intentionally do not change
-current toggle or reset behavior; using them to tighten mutation is deferred
-to PR 2 after a separate policy review.
+Compatibility and eligibility intentionally answer different questions.
+`compatibility.status === "verified"` is **not** the authorization condition:
+live inspection remains `unverified` when release identity is unavailable, yet
+an existing reviewed UI leaf can still be eligible. Every POST independently
+requires all of the following:
+
+- the exact `MANAGEABLE_IDS` member and an existing runtime entry;
+- exact reviewed package identity and a complete `reviewed-safe-ui-leaf`
+  conclusion (including reviewed provenance and observed empty dependency
+  evidence);
+- no target package, inject, or duplicate-id structural finding;
+- no global structural finding that could invalidate the leaf assumption;
+- a writable profile-patch preflight for that exact target row;
+- request trust, strict action/body schema, self protection, process queue,
+  atomic profile writer lock, optimistic concurrency, and persistence rollback.
+
+The public Loader seam does not expose a provider/consumer graph. It therefore
+cannot establish that a newly observed official entry, or another observed
+composition change, is not a new consumer of a reviewed leaf. Such a finding
+denies mutation (`global_structural_drift`) rather than being ignored. This is
+also exposed as the non-authorizing `consumer_graph_not_exposed` limitation;
+the implementation only fails closed on observable structural drift and does
+not claim to detect fully unobservable future internal-code or consumer
+changes. A
+positive Host release-identity mismatch also denies. Identity merely being
+unavailable remains a limitation rather than a fabricated `verified` result or
+a blanket permanent shutdown of the nine audited leaves.
+
+POST accepts strict explicit actions `{ "action": "force-enable" }`,
+`{ "action": "force-disable" }`, and `{ "action": "restore-inheritance" }`.
+The legacy `{ "disabled": boolean }` body remains supported and maps to the
+matching force action. Restore removes only the literal `disabled` field in
+the exact top-level profile row; unrelated fields, comments, line endings,
+`!!js`, and nested `insert` rows remain untouched. If the minimal row becomes
+empty it is removed while the empty profile remains a valid `[]` sequence.
+Restore intentionally does not call `entry.update({ disabled: null })`: real
+Cordis Loader semantics only remove that entry's current option. The atomic
+profile change is instead reconciled through DSH's established profile/HMR
+watcher, which recomposes the complete patch layer and thereby re-exposes a
+lower inherited `disabled` value when present.

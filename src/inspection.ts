@@ -16,12 +16,17 @@ import {
   type LeafReview,
 } from './evidence.ts'
 import { classifyEntry, OFFICIAL_PACKAGE_PREFIX, type EntryFacts, type LockReason } from './policy.ts'
+import { evaluateMutationEligibility, type MutationEligibility } from './eligibility.ts'
+import type { ProfileMutationPreflight, ProfileOverrideInspection } from './profile-patch.ts'
 
 export const INSPECTION_SCHEMA_VERSION = 'builtin-toggles.inspection/v1'
 export type RuntimeLifecycle = 'inactive' | 'pending' | 'loading' | 'active' | 'failed' | 'unloading' | 'unknown'
 
 export interface InspectionRuntimeEntry extends EntryFacts {
   declaredInject: readonly string[] | null
+  declaredInjectKnown: boolean
+  /** Effective Loader entry option, not a claim about which patch layer supplied it. */
+  ownDisabled: boolean | undefined
 }
 
 export interface InspectedCapability {
@@ -29,10 +34,21 @@ export interface InspectedCapability {
   packageName: string
   official: boolean
   runtimeState: { disabled: boolean; lifecycle: RuntimeLifecycle }
+  configuration: {
+    /** Profile-layer state; this is separate from Loader lifecycle and effective disabled. */
+    profileOverride: ProfileOverrideInspection
+    /** Whether the server can conservatively persist a mutation to this profile row. */
+    profilePersistence: ProfileMutationPreflight
+    /** The Loader's current effective result, which can differ while a mutation is in flight. */
+    effectiveDisabled: boolean
+    /** Agent Preset ownership is shown separately and is never a profile override. */
+    agentPresetManaged: boolean
+  }
   managementPlane: ManagementPlane
   category: CapabilityCategory
   policy: { status: 'manageable' | 'locked'; reason?: LockReason }
   verification: VerificationStatus
+  mutationEligibility: MutationEligibility
   baseline: {
     reviewed: boolean
     expectedPackageName: string | null
@@ -65,12 +81,15 @@ function lifecycleFor(phase: string | null): RuntimeLifecycle {
 export function buildInspectionResponse(
   entries: readonly InspectionRuntimeEntry[],
   runtimeIdentity: RuntimeCompositionIdentity | null = null,
+  profileOverrides: ReadonlyMap<string, ProfileOverrideInspection> = new Map(),
+  profilePersistence: ReadonlyMap<string, ProfileMutationPreflight> = new Map(),
 ): InspectionResponseV1 {
   const baseline = baselineById()
   const runtimeEvidence: RuntimeEntryEvidence[] = entries.map((entry) => ({
     id: entry.id,
     packageName: entry.name,
     declaredInject: entry.declaredInject,
+    declaredInjectKnown: entry.declaredInjectKnown,
   }))
   const compatibility = evaluateCompatibility(runtimeEvidence, REVIEWED_DSH_WEB_BASELINE, runtimeIdentity)
   const findingCodesById = new Map<string, VerificationStatus>()
@@ -82,15 +101,25 @@ export function buildInspectionResponse(
   const capabilities = entries.map((entry): InspectedCapability => {
     const reviewed = baseline.get(entry.id)
     const policy = classifyEntry(entry)
+    const writable = profilePersistence.get(entry.id) ?? { status: 'writable' as const }
     return {
       id: entry.id,
       packageName: entry.name,
       official: entry.name.startsWith(OFFICIAL_PACKAGE_PREFIX),
       runtimeState: { disabled: entry.disabled, lifecycle: lifecycleFor(entry.phase) },
+      configuration: {
+        profileOverride: profileOverrides.get(entry.id) ?? {
+          state: entry.ownDisabled === true ? 'explicitly-disabled' : entry.ownDisabled === false ? 'explicitly-enabled' : 'inherited',
+        },
+        profilePersistence: writable,
+        effectiveDisabled: entry.disabled,
+        agentPresetManaged: reviewed?.managementPlane === 'agent-preset',
+      },
       managementPlane: reviewed?.managementPlane ?? unknownPlane(),
       category: reviewed?.category ?? unknownCategory(),
       policy: policy.manageable ? { status: 'manageable' } : { status: 'locked', reason: policy.reason },
       verification: findingCodesById.get(entry.id) ?? (reviewed === undefined || !identityVerified ? 'unverified' : 'verified'),
+      mutationEligibility: evaluateMutationEligibility(entry.id, runtimeEvidence, REVIEWED_DSH_WEB_BASELINE, compatibility, writable),
       baseline: {
         reviewed: reviewed !== undefined,
         expectedPackageName: reviewed?.expectedPackageName ?? null,
