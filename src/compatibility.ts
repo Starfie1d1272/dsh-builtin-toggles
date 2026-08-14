@@ -25,14 +25,16 @@ export interface RuntimeEntryEvidence {
  * evidence only prevents their exact reviewed runtime pairs from fabricating a
  * roster drift finding.
  */
-const REVIEWED_RC6_RUNTIME_AUGMENTATION_PAIRS = new Map([
-  ['0672880e', '@deepseek-ai/dsh-host-directory-picker-browse'],
-  ['acd17651', '@deepseek-ai/dsh-client-ui-directory-picker-browse'],
-  ['7038d3b5', '@deepseek-ai/cordis-plugin-hmr'],
+const REVIEWED_RC6_RUNTIME_AUGMENTATION_PAIRS = new Set([
+  '0672880e\u0000@deepseek-ai/dsh-host-directory-picker-browse',
+  '0672880e\u0000@deepseek-ai/dsh-host-directory-picker-native',
+  'acd17651\u0000@deepseek-ai/dsh-client-ui-directory-picker-browse',
+  'acd17651\u0000@deepseek-ai/dsh-client-ui-directory-picker-native',
+  '7038d3b5\u0000@deepseek-ai/cordis-plugin-hmr',
 ])
 
 function isReviewedBootstrapAugmentation(entry: RuntimeEntryEvidence): boolean {
-  return REVIEWED_RC6_RUNTIME_AUGMENTATION_PAIRS.get(entry.id) === entry.packageName
+  return REVIEWED_RC6_RUNTIME_AUGMENTATION_PAIRS.has(`${entry.id}\u0000${entry.packageName}`)
 }
 
 /** Evidence supplied by a stable, Host-owned runtime identity seam. */

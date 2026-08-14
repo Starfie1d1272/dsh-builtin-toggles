@@ -97,14 +97,22 @@ describe('compatibility evaluation', () => {
   })
 
   it('accepts only exact reviewed rc.6 runtime augmentation evidence pairs', () => {
-    const result = evaluateCompatibility([
+    const browseResult = evaluateCompatibility([
       runtime(),
       runtime({ id: '0672880e', packageName: '@deepseek-ai/dsh-host-directory-picker-browse' }),
       runtime({ id: 'acd17651', packageName: '@deepseek-ai/dsh-client-ui-directory-picker-browse' }),
       runtime({ id: '7038d3b5', packageName: '@deepseek-ai/cordis-plugin-hmr' }),
     ], oneBaseline, reviewedRc6Identity)
-    assert.equal(result.status, 'verified')
-    assert.deepEqual(result.findings, [])
+    const nativeResult = evaluateCompatibility([
+      runtime(),
+      runtime({ id: '0672880e', packageName: '@deepseek-ai/dsh-host-directory-picker-native' }),
+      runtime({ id: 'acd17651', packageName: '@deepseek-ai/dsh-client-ui-directory-picker-native' }),
+      runtime({ id: '7038d3b5', packageName: '@deepseek-ai/cordis-plugin-hmr' }),
+    ], oneBaseline, reviewedRc6Identity)
+    for (const result of [browseResult, nativeResult]) {
+      assert.equal(result.status, 'verified')
+      assert.deepEqual(result.findings, [])
+    }
   })
 
   it('treats an augmentation package with a new id, changed package, or duplicate id as drift', () => {
