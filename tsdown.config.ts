@@ -5,8 +5,8 @@
  * - Node half: plain ESM library (`lib/index.js` under `"type": "module"`)
  *   with type declarations.
  *   Host composition provides `ctx.webServer` and `ctx.loader`; the only
- *   runtime package dependency is the reviewed atomic writer, bundled under
- *   the package dependency contract.
+ *   runtime package dependency is the reviewed atomic writer, imported at
+ *   runtime from `dependencies` rather than bundled into this artifact.
  * - Client half: the browser bundle the DSH ModuleLoader table expects:
  *   CJS output whose first statement calls
  *   `window.__ModuleLoader__.load({ id, factory })` and whose factory

@@ -10,6 +10,16 @@ export interface MutationRequestOptions {
   restoreFollowUpReads?: number
 }
 
+/** The server distinguishes an immediate Loader update from HMR recomposition. */
+export interface MutationSuccessResponse {
+  ok: true
+  id: string
+  action: MutationAction
+  disabled: boolean | null
+  runtimeEffect: 'applied' | 'recomposing'
+  persisted: boolean
+}
+
 export async function fetchInspection(fetcher: typeof fetch): Promise<InspectionSnapshot> {
   const response = await fetcher(INSPECTION_API)
   if (!response.ok) throw new Error(`HTTP ${response.status}`)
@@ -25,6 +35,7 @@ export async function mutateAndRefresh(fetcher: typeof fetch, id: string, action
     const body = await response.json().catch(() => null) as { message?: string } | null
     throw new Error(body?.message ?? `HTTP ${response.status}`)
   }
+  await response.json() as MutationSuccessResponse
   let snapshot = await fetchInspection(fetcher)
   if (action !== 'restore-inheritance') return snapshot
   const wait = options.wait ?? ((milliseconds: number) => new Promise<void>((resolve) => setTimeout(resolve, milliseconds)))

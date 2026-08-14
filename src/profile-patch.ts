@@ -152,6 +152,8 @@ interface RowShape {
   start: number
   end: number
   childIndent: number
+  /** False only for an ordinary block-mapping list item we can bound safely. */
+  transparent: boolean
   idFields: readonly { index: number; scalar: ParsedScalar }[]
 }
 
@@ -168,6 +170,12 @@ function rowShape(lines: readonly string[], start: number): RowShape {
     childIndent = line.length - trimmed.length
     break
   }
+  // A flow collection, tag, anchor, alias, scalar, or any other unfamiliar
+  // top-level item can legally contain an id that this line scanner cannot
+  // see. Do not append an override while one exists: it could shadow a target.
+  const itemContent = lines[start]!.slice(1).trimStart()
+  const transparent = itemContent.length === 0
+    || /^(?:[A-Za-z][A-Za-z0-9_-]*|'(?:''|[^'])*'|"(?:[^"\\]|\\.)*")\s*:/.test(itemContent)
   const idFields: { index: number; scalar: ParsedScalar }[] = []
   const inline = propertyValue(lines[start]!, 0, true, 'id')
   if (inline !== null) idFields.push({ index: start, scalar: parseSafeScalar(inline) })
@@ -175,7 +183,7 @@ function rowShape(lines: readonly string[], start: number): RowShape {
     const value = propertyValue(lines[i]!, childIndent, false, 'id')
     if (value !== null) idFields.push({ index: i, scalar: parseSafeScalar(value) })
   }
-  return { start, end, childIndent, idFields }
+  return { start, end, childIndent, transparent, idFields }
 }
 
 /** Locate one exact top-level override row without ever traversing `insert:`. */
@@ -184,6 +192,9 @@ function locateTargetRow(lines: readonly string[], id: string): TargetRow | null
   for (let i = 0; i < lines.length; i += 1) {
     if (!isTopLevelItem(lines[i]!)) continue
     const shape = rowShape(lines, i)
+    if (!shape.transparent) {
+      throw new PatchError(`builtin-toggles: ambiguous top-level id near line ${i + 1}; refusing to guess`)
+    }
     for (const field of shape.idFields) {
       if (field.scalar.status === 'ambiguous') {
         throw new PatchError(`builtin-toggles: ambiguous top-level id near line ${field.index + 1}; refusing to guess`)

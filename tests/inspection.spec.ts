@@ -96,6 +96,16 @@ describe('compatibility evaluation', () => {
     assert.deepEqual(result.findings[0], { scope: 'entry', code: 'new_official_entry', id: 'ui-future', observed: '@deepseek-ai/dsh-client-ui-future' })
   })
 
+  it('does not mistake reviewed rc.6 bootstrap helpers for additions to the published patch composition', () => {
+    const result = evaluateCompatibility([
+      runtime(),
+      runtime({ id: 'runtime-hmr', packageName: '@deepseek-ai/cordis-plugin-hmr' }),
+      runtime({ id: 'platform-picker', packageName: '@deepseek-ai/dsh-host-directory-picker-native' }),
+    ], oneBaseline, reviewedRc6Identity)
+    assert.equal(result.status, 'verified')
+    assert.deepEqual(result.findings, [])
+  })
+
   it('detects an expected entry missing', () => {
     const result = evaluateCompatibility([], oneBaseline, reviewedRc6Identity)
     assert.equal(result.status, 'drifted')
@@ -206,6 +216,19 @@ describe('inspection API v1 DTO', () => {
     assert.equal(goal.configuration.effectiveDisabled, true)
     assert.equal(plan.configuration.profileOverride.state, 'explicitly-enabled')
     assert.equal(plan.configuration.agentPresetManaged, true)
+  })
+
+  it('projects a composition identity mismatch as global drift but leaves structurally matching entries unverified', () => {
+    const entries = reviewedRc6RuntimeFixture().map((entry) => inspected({ id: entry.id, name: entry.packageName, declaredInject: entry.declaredInject }))
+    const response = buildInspectionResponse(entries, {
+      kind: 'dsh-release', value: '@deepseek-ai/dsh@0.1.0-rc.7', source: 'host-runtime-metadata',
+    }, profile(entries.map((entry) => entry.id)))
+    assert.equal(response.compatibility.status, 'drifted')
+    assert.deepEqual(
+      { verified: response.compatibility.verifiedCount, drifted: response.compatibility.driftedCount, unverified: response.compatibility.unverifiedCount },
+      { verified: 0, drifted: 0, unverified: REVIEWED_DSH_WEB_BASELINE.length },
+    )
+    assert.equal(response.capabilities.find((entry) => entry.id === 'ui-goal')?.verification, 'unverified')
   })
 
   it('reports an unwritable profile patch as eligibility evidence without changing inherited semantics', () => {

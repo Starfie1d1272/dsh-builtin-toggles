@@ -50,6 +50,17 @@ describe('Capability Inspector client model', () => {
     assert.equal(capabilityHasAnomaly(healthy.capabilities[1]!, healthy), false)
     assert.deepEqual(filterCapabilities(healthy, { ...EMPTY_FILTERS, anomaliesOnly: true }).map((item) => item.id), [])
   })
+  it('keeps a structurally matching reviewed capability out of anomalies-only when only composition identity mismatches', () => {
+    const inspected = snapshot([capability({ verification: 'unverified' })])
+    inspected.compatibility = {
+      ...inspected.compatibility,
+      status: 'drifted',
+      runtimeIdentity: { ...inspected.compatibility.runtimeIdentity, status: 'mismatched', observed: { value: '@deepseek-ai/dsh@0.1.0-rc.7' } },
+      findings: [{ scope: 'composition', code: 'runtime_release_identity_mismatch' }],
+    }
+    assert.equal(capabilityHasAnomaly(inspected.capabilities[0]!, inspected), false)
+    assert.deepEqual(filterCapabilities(inspected, { ...EMPTY_FILTERS, anomaliesOnly: true }).map((item) => item.id), [])
+  })
   it('marks local drift, review, profile persistence/state, and failed runtime conditions as anomalies', () => {
     const drift = capability({ verification: 'drifted' })
     const unreviewed = capability({ id: 'ui-future', baseline: { ...capability().baseline, reviewed: false } })
@@ -110,7 +121,7 @@ describe('Capability Inspector mutation request flow', () => {
     const calls: string[] = []
     const fetcher = (async (input: string | URL | Request) => {
       const url = String(input); calls.push(url)
-      const body = url.includes('/v1/inspection') ? inspections.shift()! : { ok: true }
+      const body = url.includes('/v1/inspection') ? inspections.shift()! : { ok: true, id: 'ui-goal', action: 'restore-inheritance', disabled: null, runtimeEffect: 'recomposing', persisted: true }
       return new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } })
     }) as typeof fetch
     const actual = await mutateAndRefresh(fetcher, 'ui-goal', 'restore-inheritance', { wait: async () => {}, restoreFollowUpReads: 2 })

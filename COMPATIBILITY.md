@@ -16,16 +16,22 @@ Automation must not upgrade that absence into a proof.
 1. Obtain the two published npm artifacts and preserve their exact versions.
 2. Run the baseline verifier, investigate every roster/package/inject change,
    and separately re-review each candidate leaf's service and consumer impact.
+   Manually re-review the copied, security-sensitive browser trust-fence
+   semantics against the reviewed DSH release before accepting it.
 3. Keep new official capability IDs `unknown` and locked until a separate
    architecture/security review explicitly changes the evidence and policy.
 4. An allowlist expansion is never a compatibility update; it requires that
    independent review even if the new row looks like a UI plugin.
 
-The scheduled compatibility workflow has two lanes. The rc.6 lane exercises
-the frozen artifact evidence and local package gate. The current-public lane
-only records the version currently published to npm. It is an early-warning
-observation, not an automatic support upgrade, baseline change, or allowlist
-change. GitHub source/master is likewise not support evidence.
+The compatibility workflow runs its reviewed rc.6 gate on pull requests,
+schedule, and manual dispatch. It exercises frozen artifacts, this PR's actual
+package tarball, legacy/v1 APIs, force/restart/restore state transitions, and
+the local package gate. The current-public lane compares the corresponding
+published base/web patch roster, package identities, and inject declarations
+to the reviewed baseline and uploads a machine-readable difference report. It
+is early-warning observation only, not an automatic support upgrade, baseline
+change, or allowlist change. GitHub source/master is likewise not support
+evidence.
 
 `verified` means a Host-owned runtime identity and all reviewed structural
 evidence match. `drifted` means a direct structural difference or a trusted

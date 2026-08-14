@@ -50,8 +50,18 @@ mismatches. `unverified` means no difference was observed but a reviewed
 expectation or runtime identity proof is incomplete. `verifiedCount`,
 `driftedCount`, and `unverifiedCount` count entry assertions only; composition
 identity is reported separately and never contributes a fictional entry.
+Accordingly, a composition identity mismatch makes the summary `drifted` but
+does not fabricate local drift: a structurally matching reviewed capability is
+`unverified` until identity matches; only an entry-scoped finding marks that
+capability `drifted`.
 Loader `inject` string arrays are compared as unordered service sets, matching
 Cordis injection resolution.
+
+The rc.6 DSH bootstrap also creates a small, exact set of platform helpers
+(HMR and native directory-picker adapters) after composing the two published
+patches. They remain unlisted and locked. Their opaque generated runtime ids
+are not treated as new patch-composition rows; any other new official runtime
+entry still produces structural drift.
 
 The current public DSH seams available to this plugin do not expose a Host
 release identity: `pluginInventory` is deliberately only a Loader-entry
@@ -117,3 +127,6 @@ watcher, which recomposes the complete patch layer and thereby re-exposes a
 lower inherited `disabled` value when present. A successful restore DTO only
 means the profile operation committed; it does not claim that an already-open
 runtime has synchronously converged. The client re-reads inspection afterward.
+Successful mutation DTOs make this machine-readable: force actions return
+`runtimeEffect: "applied"`; restore returns
+`runtimeEffect: "recomposing"`.

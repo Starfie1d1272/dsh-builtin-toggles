@@ -97,7 +97,6 @@ export function buildInspectionResponse(
     findingCodesById.set(finding.id, finding.code === 'baseline_package_unknown' || finding.code === 'new_official_entry' ? 'unverified' : 'drifted')
   }
   const identityVerified = compatibility.runtimeIdentity.status === 'matched'
-  const identityDrifted = compatibility.runtimeIdentity.status === 'mismatched'
   const capabilities = entries.map((entry): InspectedCapability => {
     const reviewed = baseline.get(entry.id)
     const policy = classifyEntry(entry)
@@ -120,7 +119,7 @@ export function buildInspectionResponse(
       category: reviewed?.category ?? unknownCategory(),
       policy: policy.manageable ? { status: 'manageable' } : { status: 'locked', reason: policy.reason },
       verification: findingCodesById.get(entry.id) ?? (
-        reviewed === undefined ? 'unverified' : identityDrifted ? 'drifted' : !identityVerified ? 'unverified' : 'verified'
+        reviewed === undefined ? 'unverified' : !identityVerified ? 'unverified' : 'verified'
       ),
       mutationEligibility: evaluateMutationEligibility(entry.id, runtimeEvidence, REVIEWED_DSH_WEB_BASELINE, compatibility, writable),
       baseline: {

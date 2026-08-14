@@ -146,6 +146,18 @@ describe('renderDisabledPatch', () => {
     assert.throws(() => renderDisabledPatch(content, 'ui-goal', true), PatchError)
     assert.deepEqual(inspectProfileOverride(content, 'ui-goal'), { state: 'unavailable', reason: 'ambiguous_top_level_id' })
   })
+
+  it('fails closed for an opaque flow-mapping row instead of appending a duplicate target override', () => {
+    const content = '- { id: ui-goal, disabled: true }\n'
+    assert.throws(() => renderDisabledPatch(content, 'ui-goal', false), PatchError)
+    assert.deepEqual(inspectProfileOverride(content, 'ui-goal'), { state: 'unavailable', reason: 'ambiguous_top_level_id' })
+  })
+
+  it('fails closed for tagged or anchored top-level row shapes the scanner cannot bound', () => {
+    const content = '- &goal\n  id: ui-goal\n  disabled: true\n'
+    assert.throws(() => renderDisabledPatch(content, 'ui-goal', false), PatchError)
+    assert.deepEqual(inspectProfileOverride(content, 'ui-goal'), { state: 'unavailable', reason: 'ambiguous_top_level_id' })
+  })
 })
 
 describe('effective profile override state and restore inheritance', () => {

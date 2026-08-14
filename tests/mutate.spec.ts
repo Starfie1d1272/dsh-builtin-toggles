@@ -83,7 +83,7 @@ describe('runToggle', () => {
     const result = await runToggle(deps(handle, trace), 'ui-goal', { disabled: true })
     assert.equal(result.status, 200)
     if (result.status === 200) {
-      assert.deepEqual(result.body, { ok: true, id: 'ui-goal', action: 'force-disable', disabled: true, runtime: true, persisted: true })
+      assert.deepEqual(result.body, { ok: true, id: 'ui-goal', action: 'force-disable', disabled: true, runtimeEffect: 'applied', persisted: true })
     }
     assert.deepEqual(trace.updates, [true])
     assert.deepEqual(trace.persists, [{ id: 'ui-goal', action: 'force-disable' }])
@@ -99,7 +99,10 @@ describe('runToggle', () => {
     const restoreTrace: Trace = { updates: [], persists: [] }
     const restore = await runToggle(deps(trackingEntry(restoreTrace), restoreTrace), 'ui-goal', { action: 'restore-inheritance' })
     assert.equal(restore.status, 200)
-    if (restore.body.ok) assert.equal(restore.body.disabled, null)
+    if (restore.body.ok) {
+      assert.equal(restore.body.disabled, null)
+      assert.equal(restore.body.runtimeEffect, 'recomposing')
+    }
     // `Entry.update({ disabled: null })` cannot recompose lower profile layers.
     assert.deepEqual(restoreTrace.updates, [])
     assert.deepEqual(restoreTrace.persists, [{ id: 'ui-goal', action: 'restore-inheritance' }])
@@ -111,6 +114,7 @@ describe('runToggle', () => {
     'duplicate_top_level_row',
     'duplicate_disabled_field',
     'non_literal_disabled',
+    'ambiguous_top_level_id',
   ] as const) {
     it(`profile preflight ${reason} → 409 before runtime update or persistence`, async () => {
       const trace: Trace = { updates: [], persists: [] }

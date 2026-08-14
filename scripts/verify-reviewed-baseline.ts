@@ -9,10 +9,12 @@
  */
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { REVIEWED_DSH_WEB_BASELINE } from '../src/evidence.ts'
 import { MANAGEABLE_IDS } from '../src/policy.ts'
 
-type ArtifactRow = { id: string; packageName: string; inject: readonly string[] | null }
+export type ArtifactRow = { id: string; packageName: string; inject: readonly string[] | null }
 
 function scalar(raw: string): string {
   const value = raw.trim().replace(/\s+#.*$/, '')
@@ -22,7 +24,7 @@ function scalar(raw: string): string {
 }
 
 /** Minimal reader for the published patch's regular `insert` item layout. */
-function patchRows(file: string): ArtifactRow[] {
+export function patchRows(file: string): ArtifactRow[] {
   const lines = readFileSync(file, 'utf8').split(/\r?\n/)
   const rows: ArtifactRow[] = []
   for (let index = 0; index < lines.length; index += 1) {
@@ -51,28 +53,80 @@ function patchRows(file: string): ArtifactRow[] {
   return rows
 }
 
-const [baseFile, webFile] = process.argv.slice(2)
-if (baseFile === undefined || webFile === undefined) throw new Error('expected base and web cordis.patch.yml paths')
-const artifacts = new Map<string, ArtifactRow>()
-for (const row of [...patchRows(baseFile), ...patchRows(webFile)]) {
-  assert(!artifacts.has(row.id), `published patch duplicate id: ${row.id}`)
-  artifacts.set(row.id, row)
+/** `null` means no declaration; it is deliberately not the same as `[]`. */
+export function sameDeclaredInject(left: readonly string[] | null, right: readonly string[] | null): boolean {
+  if (left === null || right === null) return left === right
+  const canonical = (value: readonly string[]) => [...new Set(value)].sort()
+  const expected = canonical(left)
+  const observed = canonical(right)
+  return expected.length === observed.length && expected.every((value, index) => value === observed[index])
 }
-const reviewedIds = new Set<string>()
-for (const reviewed of REVIEWED_DSH_WEB_BASELINE) {
-  assert(!reviewedIds.has(reviewed.id), `baseline duplicate id: ${reviewed.id}`)
-  reviewedIds.add(reviewed.id)
-  assert(reviewed.expectedPackageName !== null, `baseline package unknown: ${reviewed.id}`)
-  assert(reviewed.reviewedReference !== null, `baseline provenance missing: ${reviewed.id}`)
-  const observed = artifacts.get(reviewed.id)
-  assert(observed !== undefined, `reviewed id absent from published patch: ${reviewed.id}`)
-  assert.equal(observed.packageName, reviewed.expectedPackageName, `package mismatch: ${reviewed.id}`)
-  const expectedInject = reviewed.serviceEvidence.find((evidence) => evidence.kind === 'declared-inject')?.expectedServices ?? null
-  assert.deepEqual([...(observed.inject ?? [])].sort(), [...(expectedInject ?? [])].sort(), `inject mismatch: ${reviewed.id}`)
+
+export interface BaselineDifference {
+  duplicateIds: readonly string[]
+  missingReviewedIds: readonly string[]
+  unexpectedIds: readonly string[]
+  packageMismatches: readonly { id: string; expected: string; observed: string }[]
+  injectMismatches: readonly { id: string; expected: readonly string[] | null; observed: readonly string[] | null }[]
 }
-assert.equal(artifacts.size, reviewedIds.size, 'reviewed roster differs from published patches')
-for (const id of MANAGEABLE_IDS) {
-  const reviewed = REVIEWED_DSH_WEB_BASELINE.find((entry) => entry.id === id)
-  assert(reviewed?.expectedPackageName && reviewed.reviewedReference && reviewed.leafReview === 'reviewed-safe-ui-leaf', `manageable id lacks reviewed evidence: ${id}`)
+
+export function compareReviewedBaseline(rows: readonly ArtifactRow[]): BaselineDifference {
+  const artifacts = new Map<string, ArtifactRow>()
+  const duplicateIds: string[] = []
+  for (const row of rows) {
+    if (artifacts.has(row.id)) duplicateIds.push(row.id)
+    else artifacts.set(row.id, row)
+  }
+  const reviewedIds = new Set<string>()
+  const missingReviewedIds: string[] = []
+  const packageMismatches: { id: string; expected: string; observed: string }[] = []
+  const injectMismatches: { id: string; expected: readonly string[] | null; observed: readonly string[] | null }[] = []
+  for (const reviewed of REVIEWED_DSH_WEB_BASELINE) {
+    if (reviewedIds.has(reviewed.id)) throw new Error(`baseline duplicate id: ${reviewed.id}`)
+    reviewedIds.add(reviewed.id)
+    if (reviewed.expectedPackageName === null) throw new Error(`baseline package unknown: ${reviewed.id}`)
+    if (reviewed.reviewedReference === null) throw new Error(`baseline provenance missing: ${reviewed.id}`)
+    const observed = artifacts.get(reviewed.id)
+    if (observed === undefined) { missingReviewedIds.push(reviewed.id); continue }
+    if (observed.packageName !== reviewed.expectedPackageName) {
+      packageMismatches.push({ id: reviewed.id, expected: reviewed.expectedPackageName, observed: observed.packageName })
+    }
+    const expected = reviewed.serviceEvidence.find((evidence) => evidence.kind === 'declared-inject')?.expectedServices ?? null
+    if (!sameDeclaredInject(observed.inject, expected)) injectMismatches.push({ id: reviewed.id, expected, observed: observed.inject })
+  }
+  return {
+    duplicateIds,
+    missingReviewedIds,
+    unexpectedIds: [...artifacts.keys()].filter((id) => !reviewedIds.has(id)).sort(),
+    packageMismatches,
+    injectMismatches,
+  }
 }
-console.log(JSON.stringify({ status: 'verified-machine-checks', reviewedEntries: reviewedIds.size, manageableEntries: MANAGEABLE_IDS.length }))
+
+function hasDifferences(difference: BaselineDifference): boolean {
+  return Object.values(difference).some((value) => value.length > 0)
+}
+
+function main(): void {
+  const args = process.argv.slice(2)
+  const reportOnly = args[0] === '--report'
+  if (reportOnly) args.shift()
+  const [baseFile, webFile] = args
+  if (baseFile === undefined || webFile === undefined || args.length !== 2) throw new Error('expected base and web cordis.patch.yml paths')
+  const difference = compareReviewedBaseline([...patchRows(baseFile), ...patchRows(webFile)])
+  if (!reportOnly) {
+    assert(!hasDifferences(difference), `reviewed roster/package/inject differences: ${JSON.stringify(difference)}`)
+    for (const id of MANAGEABLE_IDS) {
+      const reviewed = REVIEWED_DSH_WEB_BASELINE.find((entry) => entry.id === id)
+      assert(reviewed?.expectedPackageName && reviewed.reviewedReference && reviewed.leafReview === 'reviewed-safe-ui-leaf', `manageable id lacks reviewed evidence: ${id}`)
+    }
+  }
+  console.log(JSON.stringify({
+    status: hasDifferences(difference) ? 'drifted' : 'verified-machine-checks',
+    reviewedEntries: REVIEWED_DSH_WEB_BASELINE.length,
+    manageableEntries: MANAGEABLE_IDS.length,
+    difference,
+  }))
+}
+
+if (process.argv[1] !== undefined && fileURLToPath(import.meta.url) === resolve(process.argv[1])) main()

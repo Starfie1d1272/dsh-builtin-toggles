@@ -17,6 +17,24 @@ export interface RuntimeEntryEvidence {
   declaredInject: readonly string[] | null
 }
 
+/**
+ * DSH rc.6 creates these platform/bootstrap helpers after the reviewed patch
+ * composition has loaded. They are not rows in either published patch, so
+ * treating their opaque runtime ids as composition additions would make the
+ * reviewed Host permanently un-mutable. They remain unlisted and locked; this
+ * exception only prevents their exact reviewed packages from fabricating a
+ * roster drift finding.
+ */
+const REVIEWED_RC6_BOOTSTRAP_AUGMENTATION_PACKAGES = new Set([
+  '@deepseek-ai/cordis-plugin-hmr',
+  '@deepseek-ai/dsh-host-directory-picker-native',
+  '@deepseek-ai/dsh-client-ui-directory-picker-native',
+])
+
+function isReviewedBootstrapAugmentation(entry: RuntimeEntryEvidence): boolean {
+  return REVIEWED_RC6_BOOTSTRAP_AUGMENTATION_PACKAGES.has(entry.packageName)
+}
+
 /** Evidence supplied by a stable, Host-owned runtime identity seam. */
 export interface RuntimeCompositionIdentity {
   kind: 'dsh-release'
@@ -136,6 +154,7 @@ export function evaluateCompatibility(
     if (duplicateIds.has(id)) continue
     const entry = entries[0]!
     if (!entry.packageName.startsWith(OFFICIAL_PACKAGE_PREFIX)) continue
+    if (isReviewedBootstrapAugmentation(entry)) continue
     if (expected.has(entry.id)) continue
     findings.push({ scope: 'entry', code: 'new_official_entry', id: entry.id, observed: entry.packageName })
     directDriftIds.add(entry.id)

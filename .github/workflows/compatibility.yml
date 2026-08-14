@@ -1,6 +1,7 @@
 name: Upstream compatibility observation
 
 on:
+  pull_request:
   schedule:
     - cron: '17 4 * * 1'
   workflow_dispatch:
@@ -13,11 +14,11 @@ jobs:
     name: reviewed rc.6 gate
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
-      - uses: pnpm/action-setup@9fd676a19091d4595eefd76e4bd31c97133911f1
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+      - uses: pnpm/action-setup@a15d269cd4658e1107c09f1fabf4cbd7bd1f308a
         with:
           version: 11.21.0
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
         with:
           node-version: 22.19.0
           cache: pnpm
@@ -52,21 +53,81 @@ jobs:
           export DSH_HOME="$ISOLATED/home"
           DSH="$ISOLATED/node_modules/.bin/dsh"
           "$DSH" plugin --profile web add "$GITHUB_WORKSPACE/.agent-tmp/compatibility/$PLUGIN_TARBALL"
-          "$DSH" web --port 39103 > "$ISOLATED/dsh.log" 2>&1 &
-          DSH_PID=$!
+          wait_for_inspection() {
+            local output="$1"
+            for attempt in $(seq 1 40); do
+              curl --fail --silent http://127.0.0.1:39103/api/builtin-toggles/v1/inspection > "$output" && test -s "$output" && return
+              sleep 1
+            done
+            echo 'timed out waiting for v1 inspection' >&2
+            return 1
+          }
+          assert_goal() {
+            node --input-type=module - "$1" "$2" "$3" <<'NODE'
+          import { readFile } from 'node:fs/promises'
+          const [file, expectedOverride, expectedDisabled] = process.argv.slice(2)
+          const inspection = JSON.parse(await readFile(file, 'utf8'))
+          if (inspection.schemaVersion !== 'builtin-toggles.inspection/v1') throw new Error('unexpected inspection schema')
+          const goal = inspection.capabilities?.find((entry) => entry.id === 'ui-goal')
+          if (!goal) throw new Error('inspection missing ui-goal')
+          if (goal.configuration?.profileOverride?.state !== expectedOverride) throw new Error(`expected ${expectedOverride}, got ${goal.configuration?.profileOverride?.state}`)
+          if (expectedDisabled !== '-' && String(goal.configuration?.effectiveDisabled) !== expectedDisabled) throw new Error(`expected effectiveDisabled=${expectedDisabled}, got ${goal.configuration?.effectiveDisabled}`)
+NODE
+          }
+          start_dsh() {
+            "$DSH" web --port 39103 > "$ISOLATED/dsh.log" 2>&1 &
+            DSH_PID=$!
+            wait_for_inspection "$ISOLATED/inspection.json"
+          }
+          restart_dsh() {
+            kill "$DSH_PID"
+            wait "$DSH_PID" || true
+            start_dsh
+          }
           trap 'kill "$DSH_PID" 2>/dev/null || true' EXIT
-          for attempt in $(seq 1 40); do curl --fail --silent http://127.0.0.1:39103/api/builtin-toggles/v1/inspection > "$ISOLATED/inspection.json" && break; sleep 1; done
-          test -s "$ISOLATED/inspection.json"
+          start_dsh
+          # Initial v1 body is parsed, not merely treated as an HTTP 2xx.
+          assert_goal "$ISOLATED/inspection.json" inherited false
           curl --fail --silent http://127.0.0.1:39103/api/builtin-toggles > "$ISOLATED/legacy.json"
           curl --fail --silent -X POST -H 'content-type: application/json' --data '{"action":"force-disable"}' http://127.0.0.1:39103/api/builtin-toggles/ui-goal > "$ISOLATED/force-disable.json"
+          node --input-type=module - "$ISOLATED/force-disable.json" <<'NODE'
+          import { readFile } from 'node:fs/promises'
+          const result = JSON.parse(await readFile(process.argv[2], 'utf8'))
+          if (result.runtimeEffect !== 'applied') throw new Error('force-disable was not runtime-applied')
+NODE
+          wait_for_inspection "$ISOLATED/after-disable.json"
+          assert_goal "$ISOLATED/after-disable.json" explicitly-disabled true
+          # Explicit profile overrides must survive an actual DSH restart.
+          restart_dsh
+          assert_goal "$ISOLATED/inspection.json" explicitly-disabled true
           curl --fail --silent -X POST -H 'content-type: application/json' --data '{"action":"force-enable"}' http://127.0.0.1:39103/api/builtin-toggles/ui-goal > "$ISOLATED/force-enable.json"
+          node --input-type=module - "$ISOLATED/force-enable.json" <<'NODE'
+          import { readFile } from 'node:fs/promises'
+          const result = JSON.parse(await readFile(process.argv[2], 'utf8'))
+          if (result.runtimeEffect !== 'applied') throw new Error('force-enable was not runtime-applied')
+NODE
+          wait_for_inspection "$ISOLATED/after-enable.json"
+          assert_goal "$ISOLATED/after-enable.json" explicitly-enabled false
           curl --fail --silent -X POST -H 'content-type: application/json' --data '{"action":"restore-inheritance"}' http://127.0.0.1:39103/api/builtin-toggles/ui-goal > "$ISOLATED/restore.json"
-          kill "$DSH_PID"
-          wait "$DSH_PID" || true
-          "$DSH" web --port 39103 > "$ISOLATED/dsh-restart.log" 2>&1 &
-          DSH_PID=$!
-          for attempt in $(seq 1 40); do curl --fail --silent http://127.0.0.1:39103/api/builtin-toggles/v1/inspection > "$ISOLATED/restarted-inspection.json" && break; sleep 1; done
-          node --input-type=module --eval "const r=JSON.parse(await (await import('node:fs/promises')).readFile('$ISOLATED/restarted-inspection.json')); if(!r.capabilities?.some(x=>x.id==='ui-goal')) throw new Error('inspection lost ui-goal after restart')"
+          node --input-type=module - "$ISOLATED/restore.json" <<'NODE'
+          import { readFile } from 'node:fs/promises'
+          const result = JSON.parse(await readFile(process.argv[2], 'utf8'))
+          if (result.runtimeEffect !== 'recomposing') throw new Error('restore incorrectly claimed immediate runtime application')
+NODE
+          for attempt in $(seq 1 20); do
+            wait_for_inspection "$ISOLATED/after-restore.json"
+            if node --input-type=module - "$ISOLATED/after-restore.json" <<'NODE'
+          import { readFile } from 'node:fs/promises'
+          const inspection = JSON.parse(await readFile(process.argv[2], 'utf8'))
+          process.exit(inspection.capabilities?.find((entry) => entry.id === 'ui-goal')?.configuration?.profileOverride?.state === 'inherited' ? 0 : 1)
+NODE
+            then break; fi
+            sleep 1
+          done
+          assert_goal "$ISOLATED/after-restore.json" inherited -
+          # Recomposition must also preserve inherited state after restart.
+          restart_dsh
+          assert_goal "$ISOLATED/inspection.json" inherited -
       - name: Compatibility summary
         run: |
           {
@@ -77,7 +138,7 @@ jobs:
             echo '- Result: baseline roster, isolated install/load, legacy/v1 API, force/restore persistence and restart, observable drift fail-closed, and trust-fence tests passed.'
             echo '- Browser smoke: not claimed here; it needs a stable public DSH browser harness.'
           } >> "$GITHUB_STEP_SUMMARY"
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      - uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4
         with:
           name: reviewed-rc6-compatibility
           path: .agent-tmp/compatibility/baseline.json
@@ -86,20 +147,46 @@ jobs:
     name: current public observation
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+      - uses: pnpm/action-setup@a15d269cd4658e1107c09f1fabf4cbd7bd1f308a
+        with:
+          version: 11.21.0
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
         with:
           node-version: 22.19.0
-      - name: Resolve the current public DSH release without changing support claims
+      - name: Compare current published DSH patches without changing support claims
         run: |
           set -euo pipefail
           VERSION="$(npm view @deepseek-ai/dsh version)"
-          printf '{"package":"@deepseek-ai/dsh","observedVersion":"%s","reviewStatus":"observational-only","supported":false}\n' "$VERSION" > compatibility-current-public.json
+          OBSERVATION="$RUNNER_TEMP/dsh-current-public"
+          mkdir -p "$OBSERVATION/base" "$OBSERVATION/web"
+          if npm pack --pack-destination "$OBSERVATION" "@deepseek-ai/dsh-base@$VERSION" "@deepseek-ai/dsh-web-app@$VERSION"; then
+            BASE_TARBALL="$(find "$OBSERVATION" -maxdepth 1 -name '*dsh-base*.tgz' -print -quit)"
+            WEB_TARBALL="$(find "$OBSERVATION" -maxdepth 1 -name '*dsh-web-app*.tgz' -print -quit)"
+            test -n "$BASE_TARBALL" && test -n "$WEB_TARBALL"
+            tar -xzf "$BASE_TARBALL" -C "$OBSERVATION/base"
+            tar -xzf "$WEB_TARBALL" -C "$OBSERVATION/web"
+            pnpm install --frozen-lockfile
+            pnpm verify:baseline --report "$OBSERVATION/base/package/cordis.patch.yml" "$OBSERVATION/web/package/cordis.patch.yml" > compatibility-current-public.json
+            node --input-type=module - "$VERSION" compatibility-current-public.json <<'NODE'
+          import { readFile, writeFile } from 'node:fs/promises'
+          const [version, file] = process.argv.slice(2)
+          const report = JSON.parse(await readFile(file, 'utf8'))
+          report.package = '@deepseek-ai/dsh'
+          report.observedVersion = version
+          report.reviewStatus = 'observational-only'
+          report.supported = false
+          await writeFile(file, `${JSON.stringify(report)}\n`)
+NODE
+          else
+            printf '{"package":"@deepseek-ai/dsh","observedVersion":"%s","status":"artifact-unavailable","reviewStatus":"observational-only","supported":false}\n' "$VERSION" > compatibility-current-public.json
+          fi
           cat compatibility-current-public.json
           echo '## Current public lane' >> "$GITHUB_STEP_SUMMARY"
           echo "- Observed @deepseek-ai/dsh: \`$VERSION\`" >> "$GITHUB_STEP_SUMMARY"
-          echo '- This is early-warning only. It does not alter the reviewed baseline, allowlist, or supported-version claim.' >> "$GITHUB_STEP_SUMMARY"
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+          echo '- Machine-readable roster/package/inject difference report is attached; this is early-warning only.' >> "$GITHUB_STEP_SUMMARY"
+          echo '- It does not alter the reviewed baseline, allowlist, or supported-version claim.' >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4
         with:
           name: current-public-compatibility
           path: compatibility-current-public.json
