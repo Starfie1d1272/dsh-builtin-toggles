@@ -14,7 +14,8 @@ import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import { BuiltinTogglesTab } from './BuiltinTogglesTab.tsx'
 import { en, zh, type BuiltinTogglesLocaleKey } from './locales.ts'
 
-export type { BuiltinTogglesTabProps, SnapshotPlugin } from './BuiltinTogglesTab.tsx'
+export type { BuiltinTogglesTabProps } from './BuiltinTogglesTab.tsx'
+export type { Capability, InspectionSnapshot, InspectorFilters, MutationAction } from './inspector-model.ts'
 export type { BuiltinTogglesLocaleKey } from './locales.ts'
 export type { BuiltinCatalogEntry, BuiltinCategory, SearchTarget } from './catalog.ts'
 export {
