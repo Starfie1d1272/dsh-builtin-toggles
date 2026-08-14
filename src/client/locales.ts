@@ -3,6 +3,11 @@
  * ui-settings-plugin-inventory pattern: a key union, a zh dictionary, an en
  * dictionary, and a `LocaleNamespaceMap` augmentation declared by the client
  * entry (client/index.ts).
+ *
+ * v0.2.0: the tab is now a Chinese-first "内置插件" catalog. The catalog
+ * CONTENT (titles / summaries / notes) lives in catalog.zh.ts — it is not
+ * duplicated here. These keys cover the tab chrome (labels, statuses, search).
+ * An English catalog (catalog.en.ts) is a later-round addition.
  */
 
 export type BuiltinTogglesLocaleKey =
@@ -11,6 +16,8 @@ export type BuiltinTogglesLocaleKey =
   | 'error'
   | 'retry'
   | 'intro'
+  | 'searchPlaceholder'
+  | 'searchEmpty'
   | 'manageableHeading'
   | 'lockedHeading'
   | 'lockedHint'
@@ -34,23 +41,24 @@ export type BuiltinTogglesLocaleKey =
   | 'reasonUnlisted'
   | 'reasonExternal'
   | 'reasonLabel'
-  | 'descUiDeliverables'
-  | 'descUiJobs'
-  | 'descUiGoal'
-  | 'descUiMessageFeedback'
-  | 'descUiModelSelection'
-  | 'descUiAgentPreset'
-  | 'descUiSkill'
-  | 'descUiSubagent'
-  | 'descUiTrajectory'
+  | 'detailsShow'
+  | 'detailsHide'
+  | 'impactLabel'
+  | 'recommendationLabel'
+  | 'lockNoteLabel'
+  | 'statusNoteLabel'
+  | 'presetManaged'
+  | 'unknownNote'
 
 /** 中文词典。 */
 export const zh: Record<BuiltinTogglesLocaleKey, string> = {
-  tab: '内置开关',
+  tab: '内置插件',
   loading: '正在读取内置插件…',
   error: '内置插件暂时不可用。',
   retry: '重试',
-  intro: '这里只允许开关一小撮经过安全审核的官方 Web UI 插件；其他内置插件默认锁定。',
+  intro: '查看 DSH Web 的官方内置插件及其作用。这些开关是 DSH Web 的全局设置，会影响所有 Web 会话，不会修改 Agent 预设；核心服务和 Agent 能力保持锁定。',
+  searchPlaceholder: '搜索名称、功能、ID 或包名',
+  searchEmpty: '没有匹配的内置插件。',
   manageableHeading: '可管理',
   lockedHeading: '其他内置插件',
   lockedHint: '以下官方内置插件已锁定，不能通过本面板操作。',
@@ -74,15 +82,14 @@ export const zh: Record<BuiltinTogglesLocaleKey, string> = {
   reasonUnlisted: '未收录',
   reasonExternal: '外部',
   reasonLabel: '锁定原因',
-  descUiDeliverables: '在每条助手消息下方展示产物文件。',
-  descUiJobs: '在会话头部展示后台任务列表。',
-  descUiGoal: '在输入坞展示目标进度条。',
-  descUiMessageFeedback: '在消息操作区展示赞 / 踩反馈。',
-  descUiModelSelection: '模型选择器（/model）。',
-  descUiAgentPreset: '默认 Agent 预设选择器。',
-  descUiSkill: '技能选择器（@ 引用源）。',
-  descUiSubagent: '子代理选择器（@ 引用源）。',
-  descUiTrajectory: '轨迹面板。',
+  detailsShow: '查看详情',
+  detailsHide: '收起详情',
+  impactLabel: '关闭后',
+  recommendationLabel: '建议',
+  lockNoteLabel: '为什么锁定',
+  statusNoteLabel: '状态说明',
+  presetManaged: '由 Agent 预设管理',
+  unknownNote: '未收录说明',
 }
 
 /** English dictionary checked against the Chinese key set. */
@@ -91,7 +98,9 @@ export const en: Record<BuiltinTogglesLocaleKey, string> = {
   loading: 'Reading built-in plugins…',
   error: 'Built-in plugins are temporarily unavailable.',
   retry: 'Retry',
-  intro: 'Only a small, security-reviewed set of official Web UI plugins can be toggled here; every other built-in stays locked.',
+  intro: 'View DSH Web’s official built-in plugins and what they do. The manageable toggles apply to the current Web Profile and affect all its sessions; they do not modify Agent Presets. Core services and Agent capabilities stay locked.',
+  searchPlaceholder: 'Search name, function, ID, or package',
+  searchEmpty: 'No matching built-ins.',
   manageableHeading: 'Manageable',
   lockedHeading: 'Other built-ins',
   lockedHint: 'The following official built-ins are locked and cannot be operated from this panel.',
@@ -115,13 +124,12 @@ export const en: Record<BuiltinTogglesLocaleKey, string> = {
   reasonUnlisted: 'Unlisted',
   reasonExternal: 'External',
   reasonLabel: 'Lock reason',
-  descUiDeliverables: 'Produced files under each assistant message.',
-  descUiJobs: 'Background jobs list in the session header.',
-  descUiGoal: 'Goal progress bar in the input dock.',
-  descUiMessageFeedback: 'Like / dislike feedback in the message action strip.',
-  descUiModelSelection: 'Model selector (/model).',
-  descUiAgentPreset: 'Default agent preset picker.',
-  descUiSkill: 'Skill picker (@ reference source).',
-  descUiSubagent: 'Subagent picker (@ reference source).',
-  descUiTrajectory: 'Trajectory panel.',
+  detailsShow: 'Show details',
+  detailsHide: 'Hide details',
+  impactLabel: 'After disabling',
+  recommendationLabel: 'Recommendation',
+  lockNoteLabel: 'Why locked',
+  statusNoteLabel: 'Status note',
+  presetManaged: 'Managed by Agent Preset',
+  unknownNote: 'No description yet',
 }
