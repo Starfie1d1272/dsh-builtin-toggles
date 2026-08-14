@@ -1,10 +1,11 @@
 /**
  * dsh-builtin-toggles — Browser half.
  *
- * Registers the "Built-ins" tab into the official Plugins settings section
- * via `settings.plugins.tab` (the canonical extension point — NOT a new
- * settings.section). Everything else comes from the host half's same-origin
- * API; the tab itself holds no state beyond the last snapshot.
+ * Registers the "内置插件 / Built-ins" tab into the official Plugins settings
+ * section via `settings.plugins.tab` (the canonical extension point — NOT a
+ * new settings.section). Everything else comes from the host half's same-origin
+ * API; the tab itself holds no state beyond the last snapshot. The display-only
+ * catalog (catalog.ts / catalog.zh.ts) annotates every row.
  */
 
 import type {} from '@deepseek-ai/dsh-client-locale/client'
@@ -15,6 +16,16 @@ import { en, zh, type BuiltinTogglesLocaleKey } from './locales.ts'
 
 export type { BuiltinTogglesTabProps, SnapshotPlugin } from './BuiltinTogglesTab.tsx'
 export type { BuiltinTogglesLocaleKey } from './locales.ts'
+export type { BuiltinCatalogEntry, BuiltinCategory, SearchTarget } from './catalog.ts'
+export {
+  PRESET_MANAGED,
+  PRESET_MANAGED_IDS,
+  matchesSearch,
+  moduleShortName,
+  normalizeSearch,
+  resolveCatalogEntry,
+} from './catalog.ts'
+export { getBuiltinCatalogEntry } from './catalog.zh.ts'
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface LocaleNamespaceMap {

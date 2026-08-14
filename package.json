@@ -1,6 +1,6 @@
 {
   "name": "dsh-builtin-toggles",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "A narrow DSH web plugin: view official built-in Loader entries and safely toggle a small, explicitly allowlisted set of presentation-only Web UI plugins from Settings → Plugins → Built-ins.",
   "type": "module",
   "license": "MIT",
