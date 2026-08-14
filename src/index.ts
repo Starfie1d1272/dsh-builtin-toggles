@@ -5,7 +5,7 @@
  * built-in Web UI plugins. Registers one same-origin API on the web surface:
  *
  *   GET  /api/builtin-toggles           → current Loader snapshot
- *   POST /api/builtin-toggles/<id>      → { disabled: boolean } (policy-gated)
+ *   POST /api/builtin-toggles/<id>      → explicit force/restore action (policy-gated)
  *
  * The POST path re-checks every security rule server-side (see policy.ts and
  * mutate.ts); the browser hiding a switch is never the security boundary.
@@ -19,13 +19,14 @@
  */
 
 import type { IncomingMessage, ServerResponse } from 'node:http'
+import { existsSync, readFileSync } from 'node:fs'
 import type { Context } from '@deepseek-ai/cordis'
 import type { Entry } from '@deepseek-ai/cordis-plugin-loader'
 import type {} from '@deepseek-ai/dsh-host-webserver'
 import { runToggle, type EntryHandle } from './mutate.ts'
 import { buildInspectionResponse, type InspectionRuntimeEntry } from './inspection.ts'
 import { classifyEntry, type EntryFacts, type SnapshotPlugin } from './policy.ts'
-import { applyDisabledOverride, profilePatchPath } from './profile-patch.ts'
+import { applyDisabledOverride, inspectProfileOverride, profilePatchPath, restoreDisabledInheritance, type ProfileOverrideInspection } from './profile-patch.ts'
 import { isTrustedRequest } from './trust.ts'
 
 /** Cordis plugin identity. */
@@ -105,13 +106,22 @@ function entryFacts(entry: Entry): EntryFacts {
  * has a stable, reviewed meaning for this API; every other shape is exposed as
  * unknown instead of being flattened or guessed.
  */
-function declaredInject(entry: Entry): readonly string[] | null {
+function injectEvidence(entry: Entry): { declaredInject: readonly string[] | null; declaredInjectKnown: boolean } {
   const inject: unknown = entry.options.inject
-  return Array.isArray(inject) && inject.every((value) => typeof value === 'string') ? inject : null
+  if (inject === undefined) return { declaredInject: null, declaredInjectKnown: true }
+  if (Array.isArray(inject) && inject.every((value) => typeof value === 'string')) {
+    return { declaredInject: inject, declaredInjectKnown: true }
+  }
+  return { declaredInject: null, declaredInjectKnown: false }
 }
 
 function inspectionEntry(entry: Entry): InspectionRuntimeEntry {
-  return { ...entryFacts(entry), declaredInject: declaredInject(entry) }
+  const inject = injectEvidence(entry)
+  return {
+    ...entryFacts(entry),
+    ...inject,
+    ownDisabled: typeof entry.options.disabled === 'boolean' ? entry.options.disabled : undefined,
+  }
 }
 
 /** Snapshot rows: manageable + official + self (external packages stay invisible). */
@@ -160,19 +170,31 @@ function readBody(req: IncomingMessage, maxBytes: number): Promise<string | null
 
 /** Wrap the loader's raw entries in the handle shape the orchestrator needs. */
 function entryHandle(entry: Entry): EntryHandle {
+  const inject = injectEvidence(entry)
   return {
     facts: entryFacts(entry),
     ownDisabled: entry.options.disabled ?? undefined,
+    ...inject,
     update: (options) => entry.update(options),
   }
 }
 
-function findEntryByShortId(ctx: Context, id: string): Entry | undefined {
-  for (const entry of ctx.loader.entries()) {
-    if (entry.options.group) continue
-    if (entry.options.id === id) return entry
+function profileOverrideSnapshot(entries: readonly InspectionRuntimeEntry[]): ReadonlyMap<string, ProfileOverrideInspection> {
+  const states = new Map<string, ProfileOverrideInspection>()
+  const file = profilePatchPath('web')
+  if (!existsSync(file)) {
+    for (const entry of entries) states.set(entry.id, { state: 'inherited' })
+    return states
   }
-  return undefined
+  try {
+    const content = readFileSync(file, 'utf8')
+    for (const entry of entries) states.set(entry.id, inspectProfileOverride(content, entry.id))
+  } catch {
+    // Inspection remains read-only and useful when the profile has not yet
+    // been created. Mutation will separately refuse to create it implicitly.
+    for (const entry of entries) states.set(entry.id, { state: 'unavailable', reason: 'profile_unavailable' })
+  }
+  return states
 }
 
 /** Register the same-origin API; runs for the lifetime of the fiber. */
@@ -205,7 +227,7 @@ export function apply(ctx: Context): void {
           // Host release identity. Do not infer one from module resolution,
           // process paths, or private Loader fields: no identity means the
           // read-only API must remain unverified.
-          sendJson(res, 200, buildInspectionResponse(entries, null))
+          sendJson(res, 200, buildInspectionResponse(entries, null, profileOverrideSnapshot(entries)))
           return
         }
 
@@ -233,12 +255,13 @@ export function apply(ctx: Context): void {
           const result = await serializeMutation(() => runToggle(
             {
               patchFile: profilePatchPath('web'),
-              findEntry: (targetId) => {
-                const entry = findEntryByShortId(ctx, targetId)
-                return entry === undefined ? undefined : entryHandle(entry)
-              },
-              persist: async (file, targetId, disabled) => {
-                const applied = await applyDisabledOverride(file, targetId, disabled)
+              listEntries: () => [...ctx.loader.entries()]
+                .filter((entry) => !entry.options.group)
+                .map(entryHandle),
+              persist: async (file, targetId, action) => {
+                const applied = action === 'restore-inheritance'
+                  ? await restoreDisabledInheritance(file, targetId)
+                  : await applyDisabledOverride(file, targetId, action === 'force-disable')
                 return { changed: applied.changed }
               },
             },

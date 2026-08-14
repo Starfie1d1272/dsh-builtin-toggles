@@ -162,12 +162,12 @@ export function checkMutation(id: string, facts: EntryFacts | undefined, body: u
       message: `builtin-toggles: ${id} is not on the manageable allowlist`,
     }
   }
-  if (!isDisabledBody(body)) {
+  if (!isMutationBody(body)) {
     return {
       ok: false,
       status: 400,
       code: 'invalid_body',
-      message: 'builtin-toggles: body must be a JSON object with a boolean "disabled" field',
+      message: 'builtin-toggles: body must be a legacy { disabled: boolean } object or an explicit mutation action',
     }
   }
   if (facts === undefined) {
@@ -202,6 +202,10 @@ export interface DisabledBody {
   disabled: boolean
 }
 
+export type MutationAction = 'force-enable' | 'force-disable' | 'restore-inheritance'
+export interface ActionBody { action: MutationAction }
+export type MutationBody = DisabledBody | ActionBody
+
 /** Narrow an unknown parsed JSON value to { disabled: boolean } (strict schema: no extra keys). */
 export function parseDisabledBody(value: unknown): DisabledBody | null {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) return null
@@ -213,6 +217,18 @@ export function parseDisabledBody(value: unknown): DisabledBody | null {
   return { disabled }
 }
 
-function isDisabledBody(value: unknown): value is DisabledBody {
-  return parseDisabledBody(value) !== null
+/** Strict API schema, retaining the v0.1 `{ disabled }` request form. */
+export function parseMutationBody(value: unknown): MutationBody | null {
+  const legacy = parseDisabledBody(value)
+  if (legacy !== null) return legacy
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return null
+  const record = value as Record<string, unknown>
+  if (Object.keys(record).length !== 1 || typeof record.action !== 'string') return null
+  return record.action === 'force-enable' || record.action === 'force-disable' || record.action === 'restore-inheritance'
+    ? { action: record.action }
+    : null
+}
+
+function isMutationBody(value: unknown): value is MutationBody {
+  return parseMutationBody(value) !== null
 }

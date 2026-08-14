@@ -26,7 +26,10 @@ function runtime(overrides: Partial<RuntimeEntryEvidence> = {}): RuntimeEntryEvi
 }
 
 function inspected(overrides: Partial<InspectionRuntimeEntry> = {}): InspectionRuntimeEntry {
-  return { id: 'ui-goal', name: '@deepseek-ai/dsh-client-ui-goal', disabled: false, phase: 'active', declaredInject: null, ...overrides }
+  return {
+    id: 'ui-goal', name: '@deepseek-ai/dsh-client-ui-goal', disabled: false, phase: 'active',
+    declaredInject: null, declaredInjectKnown: true, ownDisabled: undefined, ...overrides,
+  }
 }
 
 function reviewedRc6RuntimeFixture(): RuntimeEntryEvidence[] {
@@ -160,6 +163,12 @@ describe('inspection API v1 DTO', () => {
     assert.equal(response.inventory.externalEntries, 1)
     assert.equal(response.compatibility.runtimeIdentity.status, 'unavailable')
     assert.deepEqual(response.capabilities[0]?.runtimeState, { disabled: false, lifecycle: 'active' })
+    assert.deepEqual(response.capabilities[0]?.configuration, {
+      profileOverride: { state: 'inherited' }, effectiveDisabled: false, agentPresetManaged: false,
+    })
+    // The partial fixture intentionally lacks the rest of the frozen roster,
+    // so mutation is refused while read-only inspection remains available.
+    assert.equal(response.capabilities[0]?.mutationEligibility.status, 'ineligible')
     const unknown = response.capabilities.find((capability) => capability.id === 'ui-future')!
     assert.equal(unknown.official, true)
     assert.equal(unknown.baseline.reviewed, false)
@@ -168,6 +177,22 @@ describe('inspection API v1 DTO', () => {
     assert.equal(unknown.managementPlane, 'unknown')
     assert.equal(response.capabilities[0]?.verification, 'unverified')
     assert.equal(response.capabilities.some((capability) => 'title' in capability), false)
+  })
+
+  it('reports an explicit profile override separately from effective runtime and Agent Preset ownership', () => {
+    const response = buildInspectionResponse([
+      inspected({ disabled: true, ownDisabled: true }),
+      inspected({ id: 'plan-mode', name: '@deepseek-ai/dsh-plan-mode', ownDisabled: false }),
+    ], null, new Map([
+      ['ui-goal', { state: 'explicitly-disabled' as const }],
+      ['plan-mode', { state: 'explicitly-enabled' as const }],
+    ]))
+    const goal = response.capabilities.find((entry) => entry.id === 'ui-goal')!
+    const plan = response.capabilities.find((entry) => entry.id === 'plan-mode')!
+    assert.equal(goal.configuration.profileOverride.state, 'explicitly-disabled')
+    assert.equal(goal.configuration.effectiveDisabled, true)
+    assert.equal(plan.configuration.profileOverride.state, 'explicitly-enabled')
+    assert.equal(plan.configuration.agentPresetManaged, true)
   })
 
   it('exposes reviewed evidence independently from the existing policy projection', () => {

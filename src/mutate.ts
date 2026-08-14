@@ -7,8 +7,9 @@
  * index.ts is only a thin adapter on top of this.
  *
  * Order of operations:
- *   1. policy gate (allowlist → body schema → entry exists → official module
- *      → not self); any refusal is a 4xx with zero mutation;
+ *   1. policy + per-entry eligibility gate (allowlist → body schema → entry
+ *      → official module → reviewed structural evidence); any refusal is a
+ *      4xx with zero mutation;
  *   2. runtime update via `entry.update({ disabled })` (current session);
  *   3. persist the same override into the profile patch (survives restart);
  *   4. on any persistence failure, roll the runtime back to its previous own
@@ -17,14 +18,17 @@
 
 import {
   checkMutation,
-  parseDisabledBody,
+  parseMutationBody,
   type EntryFacts,
+  type MutationAction,
 } from './policy.ts'
+import { evaluateMutationEligibility } from './eligibility.ts'
 import {
-  applyDisabledOverride,
   ConcurrentEditError,
   PatchError,
 } from './profile-patch.ts'
+import type { RuntimeEntryEvidence } from './compatibility.ts'
+import type { ReviewedCapabilityBaseline } from './evidence.ts'
 
 /** One loader entry handle the orchestrator can read and mutate. */
 export interface EntryHandle {
@@ -32,6 +36,9 @@ export interface EntryHandle {
   facts: EntryFacts
   /** The entry's OWN `disabled` field before mutation (undefined = unset). */
   ownDisabled: boolean | null | undefined
+  /** Public Loader config evidence; false means the inject shape is opaque. */
+  declaredInject: readonly string[] | null
+  declaredInjectKnown: boolean
   /** Apply a runtime update; rejects on failure. */
   update: (options: { disabled: boolean | null }) => Promise<void>
 }
@@ -40,29 +47,25 @@ export interface EntryHandle {
 export interface MutateDeps {
   /** Profile patch file path. */
   patchFile: string
-  /** Look up one loader entry by its short id; undefined when absent. */
-  findEntry: (id: string) => EntryHandle | undefined
+  /** One coherent public Loader inventory for policy, eligibility and mutation. */
+  listEntries: () => readonly EntryHandle[]
+  /** Test seam only; production always uses the frozen full baseline. */
+  eligibilityBaseline?: readonly ReviewedCapabilityBaseline[]
   /**
    * Persist the override; returns whether the file changed.
    * Rejects with ConcurrentEditError / PatchError / fs errors.
    */
-  persist: (file: string, id: string, disabled: boolean) => Promise<{ changed: boolean }>
+  persist: (file: string, id: string, action: MutationAction) => Promise<{ changed: boolean }>
 }
 
 /** Wire deps used by the real route handler. */
-export function realPersist(): MutateDeps['persist'] {
-  return async (file, id, disabled) => {
-    const result = await applyDisabledOverride(file, id, disabled)
-    return { changed: result.changed }
-  }
-}
-
 export interface MutateOk {
   status: 200
   body: {
     ok: true
     id: string
-    disabled: boolean
+    action: MutationAction
+    disabled: boolean | null
     runtime: true
     persisted: boolean
   }
@@ -92,15 +95,30 @@ export async function runToggle(
   id: string,
   rawBody: unknown,
 ): Promise<MutateResult> {
-  const body = parseDisabledBody(rawBody)
-  const entry = deps.findEntry(id)
+  const body = parseMutationBody(rawBody)
+  const entries = deps.listEntries()
+  const entry = entries.find((candidate) => candidate.facts.id === id)
   const verdict = checkMutation(id, entry?.facts, body)
 
   if (!verdict.ok) {
     return refuse(verdict.status, verdict.code, verdict.message)
   }
 
-  const disabled = body!.disabled
+  const action: MutationAction = 'disabled' in body!
+    ? body!.disabled ? 'force-disable' : 'force-enable'
+    : body!.action
+  const runtimeEvidence: RuntimeEntryEvidence[] = entries.map((candidate) => ({
+    id: candidate.facts.id,
+    packageName: candidate.facts.name,
+    declaredInject: candidate.declaredInject,
+    declaredInjectKnown: candidate.declaredInjectKnown,
+  }))
+  const eligibility = evaluateMutationEligibility(id, runtimeEvidence, deps.eligibilityBaseline)
+  if (eligibility.status !== 'eligible') {
+    return refuse(409, 'mutation_ineligible', `builtin-toggles: ${id} is not eligible (${eligibility.reasons.join(', ')})`)
+  }
+
+  const disabled = action === 'force-disable' ? true : action === 'force-enable' ? false : null
   const previousOwn = entry!.ownDisabled
 
   // Runtime first: the Loader is the authority for the current session.
@@ -113,7 +131,7 @@ export async function runToggle(
   // Persistence second: survives restart; on failure roll the runtime back.
   let persisted = false
   try {
-    persisted = (await deps.persist(deps.patchFile, id, disabled)).changed
+    persisted = (await deps.persist(deps.patchFile, id, action)).changed
   } catch (error) {
     const rollbackError = await rollbackRuntime(entry!, previousOwn)
     if (rollbackError !== undefined) {
@@ -130,7 +148,7 @@ export async function runToggle(
 
   return {
     status: 200,
-    body: { ok: true, id, disabled, runtime: true, persisted },
+    body: { ok: true, id, action, disabled, runtime: true, persisted },
   }
 }
 

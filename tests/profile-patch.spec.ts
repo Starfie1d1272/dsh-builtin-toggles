@@ -12,7 +12,10 @@ import { describe, it } from 'node:test'
 import {
   applyDisabledOverride,
   ConcurrentEditError,
+  inspectProfileOverride,
   PatchError,
+  renderRestoreInheritance,
+  restoreDisabledInheritance,
   renderDisabledPatch,
   type ApplyDeps,
 } from '../src/profile-patch.ts'
@@ -129,6 +132,53 @@ describe('renderDisabledPatch', () => {
   })
 })
 
+describe('effective profile override state and restore inheritance', () => {
+  it('distinguishes inherited, explicit enable and explicit disable', () => {
+    assert.deepEqual(inspectProfileOverride('- id: ui-jobs\n  disabled: true\n', 'ui-goal'), { state: 'inherited' })
+    assert.deepEqual(inspectProfileOverride('- id: ui-goal\n  disabled: false\n', 'ui-goal'), { state: 'explicitly-enabled' })
+    assert.deepEqual(inspectProfileOverride('- id: ui-goal\n  disabled: true\n', 'ui-goal'), { state: 'explicitly-disabled' })
+    assert.equal(inspectProfileOverride(renderDisabledPatch('[]\n', 'ui-goal', false).content, 'ui-goal').state, 'explicitly-enabled')
+    assert.equal(inspectProfileOverride(renderDisabledPatch('[]\n', 'ui-goal', true).content, 'ui-goal').state, 'explicitly-disabled')
+  })
+
+  it('restores inheritance by deleting only disabled and preserving fields, comments and !!js', () => {
+    const input = `# keep me
+- id: ui-goal
+  name: '@deepseek-ai/dsh-client-ui-goal'
+  config: !!js ctx.profile.goal
+  disabled: true # temporary
+- id: ui-jobs
+  disabled: false
+`
+    const result = renderRestoreInheritance(input, 'ui-goal')
+    assert.equal(result.content, `# keep me
+- id: ui-goal
+  name: '@deepseek-ai/dsh-client-ui-goal'
+  config: !!js ctx.profile.goal
+  # temporary
+- id: ui-jobs
+  disabled: false
+`)
+  })
+
+  it('removes a minimal override row and leaves a canonical empty sequence', () => {
+    const result = renderRestoreInheritance('- id: ui-goal\n  disabled: true\n', 'ui-goal')
+    assert.equal(result.content, '[]\n')
+    assert.equal(inspectProfileOverride(result.content, 'ui-goal').state, 'inherited')
+  })
+
+  it('does not alter a nested insert during restore', () => {
+    const input = '- insert:\n    - id: ui-goal\n      disabled: true\n- id: ui-goal\n  disabled: false\n'
+    const result = renderRestoreInheritance(input, 'ui-goal')
+    assert.equal(result.content, '- insert:\n    - id: ui-goal\n      disabled: true\n')
+  })
+
+  it('keeps CRLF while restoring inheritance', () => {
+    const result = renderRestoreInheritance('- id: ui-jobs\r\n  disabled: false\r\n- id: ui-goal\r\n  disabled: true\r\n', 'ui-goal')
+    assert.equal(result.content, '- id: ui-jobs\r\n  disabled: false\r\n')
+  })
+})
+
 describe('applyDisabledOverride (official lock + atomic write)', () => {
   function tempFile(content: string): string {
     const dir = mkdtempSync(join(tmpdir(), 'builtin-toggles-'))
@@ -192,6 +242,21 @@ describe('applyDisabledOverride (official lock + atomic write)', () => {
   it('missing profile patch → refuses to create it implicitly', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'builtin-toggles-'))
     await assert.rejects(() => applyDisabledOverride(join(dir, 'nope.yml'), 'ui-goal', true), PatchError)
+  })
+
+  it('restore uses the same lock, optimistic concurrency refusal and atomic writer', async () => {
+    const file = tempFile('- id: ui-goal\n  disabled: true\n')
+    let reads = 0
+    const deps: ApplyDeps = {
+      read: () => {
+        reads += 1
+        return reads === 1 ? '- id: ui-goal\n  disabled: true\n' : '# external\n[]\n'
+      },
+      writeAtomic: async () => { assert.fail('must not write on conflict') },
+      lock: async (_file, operation) => operation(),
+    }
+    await assert.rejects(() => restoreDisabledInheritance(file, 'ui-goal', deps), ConcurrentEditError)
+    assert.equal(readFileSync(file, 'utf8'), '- id: ui-goal\n  disabled: true\n')
   })
 })
 

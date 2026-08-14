@@ -11,7 +11,8 @@ export type CapabilityCategory = 'presentation' | 'agent' | 'transport' | 'infra
 export interface ServiceEvidence {
   /** Loader inject declarations are directly comparable at runtime. */
   kind: 'declared-inject'
-  expectedServices: readonly string[]
+  /** `null` means the reviewed patch did not declare an inject array. */
+  expectedServices: readonly string[] | null
 }
 
 export interface DependencyEvidence {
@@ -254,6 +255,16 @@ function categoryFor(id: string): CapabilityCategory {
 }
 
 function dependencyEvidenceFor(id: string): DependencyEvidence {
+  if (SAFE_UI_LEAF_IDS.has(id)) {
+    // This is the admission evidence behind `reviewed-safe-ui-leaf`: each
+    // admitted leaf declared no provided service and had no consumer in the
+    // reviewed rc.6 composition. It is deliberately explicit rather than
+    // treating an unreviewed absence as a safe default.
+    return {
+      provides: { status: 'observed', services: [] },
+      consumers: { status: 'observed', ids: [] },
+    }
+  }
   if (id === 'ui-commands') {
     return {
       provides: { status: 'observed', services: ['commandUi'] },
@@ -280,7 +291,7 @@ export const REVIEWED_DSH_WEB_BASELINE: readonly ReviewedCapabilityBaseline[] = 
   expectedPackageName,
   managementPlane: managementPlaneFor(id),
   category: categoryFor(id),
-  serviceEvidence: REVIEWED_INJECTS[id] === undefined ? [] : [{ kind: 'declared-inject', expectedServices: REVIEWED_INJECTS[id] }],
+  serviceEvidence: [{ kind: 'declared-inject', expectedServices: REVIEWED_INJECTS[id] ?? null }],
   dependencyEvidence: dependencyEvidenceFor(id),
   leafReview: leafReviewFor(id),
   reviewedReference: source === '@deepseek-ai/dsh-base' ? BASE_REFERENCE : WEB_REFERENCE,

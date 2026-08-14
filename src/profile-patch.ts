@@ -8,8 +8,9 @@
  *
  * - recognizes TOP-LEVEL `- id: <exact id>` rows (column 0) as the override
  *   target; an id inside a nested `insert:` block is never edited in place;
- * - adds or replaces only that row's OWN `disabled:` field (at the row's
- *   observed child indentation);
+ * - adds, replaces, or removes only that row's OWN literal `disabled:` field
+ *   (at the row's observed child indentation); when restore leaves a minimal
+ *   row empty, it removes that row while retaining a valid empty sequence;
  * - leaves `config`, `name`, other ids, comments, `!!js` and the original
  *   line endings untouched;
  * - appends a minimal name-less `- id: <id>` / `  disabled: …` override when
@@ -63,6 +64,14 @@ export interface RenderResult {
   createdRow: boolean
 }
 
+export type ProfileOverrideState = 'inherited' | 'explicitly-enabled' | 'explicitly-disabled'
+
+export interface ProfileOverrideInspection {
+  state: ProfileOverrideState | 'unavailable'
+  /** An unavailable state is read-only information, never an authorization. */
+  reason?: 'duplicate_top_level_row' | 'non_literal_disabled' | 'profile_unavailable'
+}
+
 /** EOL style of the file, from its first newline; defaults to LF. */
 function detectEol(content: string): string {
   const index = content.indexOf('\r\n')
@@ -86,6 +95,73 @@ function topLevelRowId(line: string): string | null {
   return match === null ? null : match[1]!
 }
 
+interface TargetRow {
+  start: number
+  end: number
+  indent: string
+  disabledIndex: number
+  disabledValue: boolean | null
+  disabledSuffix: string
+}
+
+function targetRows(lines: readonly string[], id: string): number[] {
+  const rows: number[] = []
+  for (let i = 0; i < lines.length; i += 1) if (topLevelRowId(lines[i]!) === id) rows.push(i)
+  return rows
+}
+
+/** Locate one exact top-level override row without ever traversing `insert:`. */
+function locateTargetRow(lines: readonly string[], id: string): TargetRow | null {
+  const rows = targetRows(lines, id)
+  if (rows.length > 1) throw new PatchError(`builtin-toggles: duplicate top-level override rows for ${id}; refusing to guess`)
+  const start = rows[0]
+  if (start === undefined) return null
+  let end = lines.length
+  for (let i = start + 1; i < lines.length; i += 1) {
+    if (isTopLevelItem(lines[i]!) || isTopLevelContent(lines[i]!)) {
+      end = i
+      break
+    }
+  }
+  let childIndent = 2
+  for (let i = start + 1; i < end; i += 1) {
+    const line = lines[i]!
+    const trimmed = line.trimStart()
+    if (trimmed.length === 0 || trimmed.startsWith('#')) continue
+    childIndent = line.length - trimmed.length
+    break
+  }
+  const indent = ' '.repeat(childIndent)
+  const prefix = new RegExp(`^${indent}disabled:`)
+  let disabledIndex = -1
+  let disabledValue: boolean | null = null
+  let disabledSuffix = ''
+  for (let i = start + 1; i < end; i += 1) {
+    const line = lines[i]!
+    if (!prefix.test(line)) continue
+    if (disabledIndex !== -1) throw new PatchError(`builtin-toggles: duplicate disabled fields for ${id}; refusing to guess`)
+    disabledIndex = i
+    const literal = new RegExp(`^${indent}disabled:\\s*(true|false)(\\s*(?:#.*)?)?$`).exec(line)
+    if (literal === null) throw new PatchError(`builtin-toggles: ${id} has a non-literal disabled override; refusing to rewrite it`)
+    disabledValue = literal[1] === 'true'
+    disabledSuffix = literal[2] ?? ''
+  }
+  return { start, end, indent, disabledIndex, disabledValue, disabledSuffix }
+}
+
+/** Read only the current profile-layer override; no YAML reserialization. */
+export function inspectProfileOverride(content: string, id: string): ProfileOverrideInspection {
+  const lines = content.length === 0 ? [] : content.split(/\r?\n/)
+  try {
+    const row = locateTargetRow(lines, id)
+    if (row === null || row.disabledIndex === -1) return { state: 'inherited' }
+    return { state: row.disabledValue ? 'explicitly-disabled' : 'explicitly-enabled' }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : ''
+    return { state: 'unavailable', reason: message.includes('duplicate top-level') ? 'duplicate_top_level_row' : 'non_literal_disabled' }
+  }
+}
+
 /**
  * Render `content` with the top-level override row for `id` set to
  * `disabled`. Pure: no filesystem access, no parsing of unknown structure.
@@ -95,56 +171,18 @@ export function renderDisabledPatch(content: string, id: string, disabled: boole
   const rawLines = content.length === 0 ? [] : content.split(/\r?\n/)
   const lines: string[] = [...rawLines]
 
-  // ── find the top-level target row ──────────────────────────────────────────
-  let rowIndex = -1
-  for (let i = 0; i < lines.length; i += 1) {
-    if (topLevelRowId(lines[i]!) === id) {
-      rowIndex = i
-      break
-    }
-  }
-
   const value = String(disabled)
   const defaultChildIndent = 2
+  const target = locateTargetRow(lines, id)
 
-  if (rowIndex !== -1) {
+  if (target !== null) {
     // ── row exists: operate on its own subtree only ──────────────────────────
-    let subtreeEnd = lines.length
-    for (let i = rowIndex + 1; i < lines.length; i += 1) {
-      const line = lines[i]!
-      if (isTopLevelItem(line) || isTopLevelContent(line)) {
-        subtreeEnd = i
-        break
-      }
-    }
-
-    // The row's own children indentation: observed from its first real child,
-    // defaulting to 2 spaces (the canonical `- id:` child indent).
-    let childIndent = defaultChildIndent
-    for (let i = rowIndex + 1; i < subtreeEnd; i += 1) {
-      const line = lines[i]!
-      const trimmed = line.trimStart()
-      if (trimmed.length === 0 || trimmed.startsWith('#')) continue
-      childIndent = line.length - trimmed.length
-      break
-    }
-    const indent = ' '.repeat(childIndent)
-    const disabledPattern = new RegExp(`^${indent}disabled:`)
-
-    let disabledIndex = -1
-    for (let i = rowIndex + 1; i < subtreeEnd; i += 1) {
-      if (disabledPattern.test(lines[i]!)) {
-        disabledIndex = i
-        break
-      }
-    }
-
-    if (disabledIndex !== -1) {
-      const existing = lines[disabledIndex]!.replace(disabledPattern, '').trim()
-      if (existing === value) return { content, changed: false, createdRow: false }
-      lines[disabledIndex] = `${indent}disabled: ${value}`
+    if (target.disabledIndex !== -1) {
+      if (target.disabledValue === disabled) return { content, changed: false, createdRow: false }
+      // Preserve an inline explanation exactly; generic YAML output would not.
+      lines[target.disabledIndex] = `${target.indent}disabled: ${value}${target.disabledSuffix}`
     } else {
-      lines.splice(subtreeEnd, 0, `${indent}disabled: ${value}`)
+      lines.splice(target.end, 0, `${target.indent}disabled: ${value}`)
     }
     return { content: lines.join(eol), changed: true, createdRow: false }
   }
@@ -182,6 +220,40 @@ export function renderDisabledPatch(content: string, id: string, disabled: boole
     lines.push(...row)
   }
   return { content: lines.join(eol), changed: true, createdRow: true }
+}
+
+/** Remove only this row's literal top-level `disabled` override. */
+export function renderRestoreInheritance(content: string, id: string): RenderResult {
+  const eol = detectEol(content)
+  const lines = content.length === 0 ? [] : content.split(/\r?\n/)
+  const target = locateTargetRow(lines, id)
+  if (target === null || target.disabledIndex === -1) return { content, changed: false, createdRow: false }
+
+  const hasOtherContent = lines.slice(target.start + 1, target.end).some((line, index) => {
+    const absoluteIndex = target.start + 1 + index
+    return absoluteIndex !== target.disabledIndex && line.trim() !== '' && !line.trimStart().startsWith('#')
+  })
+  const hasComments = lines.slice(target.start + 1, target.end).some((line, index) => {
+    const absoluteIndex = target.start + 1 + index
+    return absoluteIndex !== target.disabledIndex && line.trimStart().startsWith('#')
+  }) || target.disabledSuffix.trim().length > 0
+
+  if (!hasOtherContent && !hasComments) {
+    lines.splice(target.disabledIndex, 1)
+    lines.splice(target.start, 1)
+    // An empty YAML document is not the profile's canonical empty sequence.
+    // Keep the file consumable while still deleting the override row itself.
+    if (lines.every((line) => line.trim() === '' || line.trimStart().startsWith('#'))) {
+      const trailing = lines.length > 0 && lines[lines.length - 1] === ''
+      lines.splice(trailing ? lines.length - 1 : lines.length, 0, '[]')
+    }
+  } else if (target.disabledSuffix.trim().length > 0) {
+    // Retain an inline comment as a comment line instead of discarding it.
+    lines[target.disabledIndex] = `${target.indent}${target.disabledSuffix.trimStart()}`
+  } else {
+    lines.splice(target.disabledIndex, 1)
+  }
+  return { content: lines.join(eol), changed: true, createdRow: false }
 }
 
 /** Resolve `$DSH_HOME`, defaulting to `~/.dsh` when unset or blank. */
@@ -225,6 +297,23 @@ export async function applyDisabledOverride(
   disabled: boolean,
   deps: ApplyDeps = realDeps,
 ): Promise<{ changed: boolean; createdRow: boolean }> {
+  return applyProfilePatch(file, (content) => renderDisabledPatch(content, id, disabled), deps)
+}
+
+/** Restore Loader inheritance by deleting this profile row's `disabled` field. */
+export async function restoreDisabledInheritance(
+  file: string,
+  id: string,
+  deps: ApplyDeps = realDeps,
+): Promise<{ changed: boolean; createdRow: boolean }> {
+  return applyProfilePatch(file, (content) => renderRestoreInheritance(content, id), deps)
+}
+
+async function applyProfilePatch(
+  file: string,
+  render: (content: string) => RenderResult,
+  deps: ApplyDeps,
+): Promise<{ changed: boolean; createdRow: boolean }> {
   if (!existsSync(file)) {
     throw new PatchError(`builtin-toggles: profile patch missing: ${file}; refusing to create it implicitly`)
   }
@@ -234,7 +323,7 @@ export async function applyDisabledOverride(
   const mode = statSync(file).mode & 0o777
   return deps.lock(file, async () => {
     const original = deps.read(file)
-    const rendered = renderDisabledPatch(original, id, disabled)
+    const rendered = render(original)
     if (!rendered.changed) return { changed: false, createdRow: false }
     // Optimistic concurrency: refuse (not overwrite) an external edit that
     // landed between our locked read and the replace.
