@@ -154,7 +154,7 @@ jobs:
             echo '- Result: baseline roster, isolated install/load, legacy/v1 API, force/restore persistence and restart, observable drift fail-closed, and trust-fence tests passed.'
             echo '- Browser smoke: not claimed here; it needs a stable public DSH browser harness.'
           } >> "$GITHUB_STEP_SUMMARY"
-      - uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
         with:
           name: reviewed-rc6-compatibility
           path: .agent-tmp/compatibility/baseline.json
@@ -202,7 +202,7 @@ jobs:
           echo "- Observed @deepseek-ai/dsh: \`$VERSION\`" >> "$GITHUB_STEP_SUMMARY"
           echo '- Machine-readable roster/package/inject difference report is attached; this is early-warning only.' >> "$GITHUB_STEP_SUMMARY"
           echo '- It does not alter the reviewed baseline, allowlist, or supported-version claim.' >> "$GITHUB_STEP_SUMMARY"
-      - uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
         with:
           name: current-public-compatibility
           path: compatibility-current-public.json
