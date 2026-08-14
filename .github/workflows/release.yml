@@ -1,0 +1,74 @@
+name: Release
+
+# npm Trusted Publishing: triggered by version tags (v*), this workflow
+# verifies the tag against package.json and publishes to the official npm
+# registry using the OIDC-issued identity — no NPM_TOKEN, no secrets.
+# The registry-side trust relationship is configured via `npm trust github`
+# (repository: Starfie1d1272/dsh-builtin-toggles, workflow: release.yml,
+# allowed action: npm publish).
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  # Only the OIDC token for Trusted Publishing; nothing else is written.
+  contents: read
+  id-token: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.21.0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+          cache: pnpm
+
+      # Trusted Publishing needs npm >= 11.5.1 (and `npm trust` >= 11.15.0);
+      # make the runner's npm deterministic instead of relying on the Node
+      # release's bundled version.
+      - name: Ensure npm >= 11.5.1
+        run: npm install -g npm@^11.5.1
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Test
+        run: pnpm test
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Build
+        run: pnpm build
+
+      - name: Committed lib matches build
+        run: git diff --exit-code -- lib
+
+      - name: Verify tag matches package version
+        run: |
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          PKG_VERSION="$(node -p "require('./package.json').version")"
+          echo "tag version: ${TAG_VERSION}"
+          echo "package version: ${PKG_VERSION}"
+          test "${TAG_VERSION}" = "${PKG_VERSION}"
+
+      - name: Pack dry-run
+        run: npm pack --dry-run
+
+      # OIDC trusted publishing: npm exchanges the Actions id-token with the
+      # registry automatically — no NODE_AUTH_TOKEN / NPM_TOKEN anywhere.
+      - name: Publish to npm
+        run: npm publish --access public
