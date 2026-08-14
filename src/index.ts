@@ -23,6 +23,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import type { Entry } from '@deepseek-ai/cordis-plugin-loader'
 import type {} from '@deepseek-ai/dsh-host-webserver'
 import { runToggle, type EntryHandle } from './mutate.ts'
+import { buildInspectionResponse, type InspectionRuntimeEntry } from './inspection.ts'
 import { classifyEntry, type EntryFacts, type SnapshotPlugin } from './policy.ts'
 import { applyDisabledOverride, profilePatchPath } from './profile-patch.ts'
 import { isTrustedRequest } from './trust.ts'
@@ -35,6 +36,8 @@ export const inject = ['webServer', 'loader']
 
 /** The same-origin API prefix. */
 export const API_PREFIX = '/api/builtin-toggles'
+/** Versioned, read-only inspection endpoint. */
+export const INSPECTION_API_PATH = `${API_PREFIX}/v1/inspection`
 
 /** Maximum accepted POST body. */
 const MAX_BODY_BYTES = 4096
@@ -95,6 +98,20 @@ function entryFacts(entry: Entry): EntryFacts {
     disabled: entry.disabled,
     phase: fiberPhase(entry),
   }
+}
+
+/**
+ * Loader `inject` can also be an intercept object.  Only a plain string array
+ * has a stable, reviewed meaning for this API; every other shape is exposed as
+ * unknown instead of being flattened or guessed.
+ */
+function declaredInject(entry: Entry): readonly string[] | null {
+  const inject: unknown = entry.options.inject
+  return Array.isArray(inject) && inject.every((value) => typeof value === 'string') ? inject : null
+}
+
+function inspectionEntry(entry: Entry): InspectionRuntimeEntry {
+  return { ...entryFacts(entry), declaredInject: declaredInject(entry) }
 }
 
 /** Snapshot rows: manageable + official + self (external packages stay invisible). */
@@ -179,6 +196,18 @@ export function apply(ctx: Context): void {
         }
         const pathname = (req.url ?? '/').split('?')[0] ?? '/'
         const method = req.method ?? 'GET'
+
+        if (method === 'GET' && pathname === INSPECTION_API_PATH) {
+          const entries = [...ctx.loader.entries()]
+            .filter((entry) => !entry.options.group)
+            .map(inspectionEntry)
+          // DSH's public Loader inventory and webRuntime seams expose no
+          // Host release identity. Do not infer one from module resolution,
+          // process paths, or private Loader fields: no identity means the
+          // read-only API must remain unverified.
+          sendJson(res, 200, buildInspectionResponse(entries, null))
+          return
+        }
 
         if (method === 'GET' && pathname === API_PREFIX) {
           sendJson(res, 200, { plugins: buildSnapshot([...ctx.loader.entries()]) })

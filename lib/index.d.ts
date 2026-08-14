@@ -304,6 +304,8 @@ declare const name = "builtin-toggles";
 declare const inject: string[];
 /** The same-origin API prefix. */
 declare const API_PREFIX = "/api/builtin-toggles";
+/** Versioned, read-only inspection endpoint. */
+declare const INSPECTION_API_PATH = "/api/builtin-toggles/v1/inspection";
 /**
  * Decode a URL-encoded plugin id from the request path. Malformed percent
  * encoding (`%ZZ`, dangling `%`) must never throw into the HTTP layer:
@@ -317,4 +319,4 @@ declare function buildSnapshot(entries: Entry[]): SnapshotPlugin[];
 /** Register the same-origin API; runs for the lifetime of the fiber. */
 declare function apply(ctx: Context): void;
 //#endregion
-export { API_PREFIX, apply, buildSnapshot, decodeEntryId, inject, name, serializeMutation };
+export { API_PREFIX, INSPECTION_API_PATH, apply, buildSnapshot, decodeEntryId, inject, name, serializeMutation };
