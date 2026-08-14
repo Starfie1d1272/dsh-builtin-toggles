@@ -61,13 +61,13 @@ The reviewed rc.6 real-DSH run uses a fixed Loader random seed and records
 six runtime augmentation evidence pairs: `0672880e` /
 `@deepseek-ai/dsh-host-directory-picker-browse`, `acd17651` /
 `@deepseek-ai/dsh-client-ui-directory-picker-browse`, and `7038d3b5` /
-`@deepseek-ai/cordis-plugin-hmr` for the inherited browser state; `823ffe04` /
-`@deepseek-ai/dsh-host-directory-picker-native`, `0672880e` /
-`@deepseek-ai/dsh-client-ui-directory-picker-native`, and `acd17651` /
-`@deepseek-ai/cordis-plugin-hmr` for the explicit-disabled native state. These
-are still exact pair evidence, not a package-level exemption. They are not
-published patch-baseline rows, remain unlisted and locked, and a new id, other
-package, or duplicate still produces structural drift.
+`@deepseek-ai/cordis-plugin-hmr` for the first reviewed startup; `823ffe04` /
+`@deepseek-ai/dsh-host-directory-picker-browse`, `0672880e` /
+`@deepseek-ai/dsh-client-ui-directory-picker-browse`, and `acd17651` /
+`@deepseek-ai/cordis-plugin-hmr` for its reviewed restart registration order.
+These are still exact pair evidence, not a package-level exemption. They are
+not published patch-baseline rows, remain unlisted and locked, and a new id,
+other package, or duplicate still produces structural drift.
 
 The current public DSH seams available to this plugin do not expose a Host
 release identity: `pluginInventory` is deliberately only a Loader-entry

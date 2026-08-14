@@ -29,8 +29,8 @@ const REVIEWED_RC6_RUNTIME_AUGMENTATION_PAIRS = new Set([
   '0672880e\u0000@deepseek-ai/dsh-host-directory-picker-browse',
   'acd17651\u0000@deepseek-ai/dsh-client-ui-directory-picker-browse',
   '7038d3b5\u0000@deepseek-ai/cordis-plugin-hmr',
-  '823ffe04\u0000@deepseek-ai/dsh-host-directory-picker-native',
-  '0672880e\u0000@deepseek-ai/dsh-client-ui-directory-picker-native',
+  '823ffe04\u0000@deepseek-ai/dsh-host-directory-picker-browse',
+  '0672880e\u0000@deepseek-ai/dsh-client-ui-directory-picker-browse',
   'acd17651\u0000@deepseek-ai/cordis-plugin-hmr',
 ])
 

@@ -103,13 +103,13 @@ describe('compatibility evaluation', () => {
       runtime({ id: 'acd17651', packageName: '@deepseek-ai/dsh-client-ui-directory-picker-browse' }),
       runtime({ id: '7038d3b5', packageName: '@deepseek-ai/cordis-plugin-hmr' }),
     ], oneBaseline, reviewedRc6Identity)
-    const nativeResult = evaluateCompatibility([
+    const restartedResult = evaluateCompatibility([
       runtime(),
-      runtime({ id: '823ffe04', packageName: '@deepseek-ai/dsh-host-directory-picker-native' }),
-      runtime({ id: '0672880e', packageName: '@deepseek-ai/dsh-client-ui-directory-picker-native' }),
+      runtime({ id: '823ffe04', packageName: '@deepseek-ai/dsh-host-directory-picker-browse' }),
+      runtime({ id: '0672880e', packageName: '@deepseek-ai/dsh-client-ui-directory-picker-browse' }),
       runtime({ id: 'acd17651', packageName: '@deepseek-ai/cordis-plugin-hmr' }),
     ], oneBaseline, reviewedRc6Identity)
-    for (const result of [browseResult, nativeResult]) {
+    for (const result of [browseResult, restartedResult]) {
       assert.equal(result.status, 'verified')
       assert.deepEqual(result.findings, [])
     }
