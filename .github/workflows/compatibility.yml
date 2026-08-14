@@ -86,10 +86,18 @@ jobs:
             DSH_PID=$!
             wait_for_inspection "$ISOLATED/inspection.json"
           }
+          print_compatibility() {
+            node --input-type=module - "$ISOLATED/inspection.json" <<'NODE'
+          import { readFile } from 'node:fs/promises'
+          const inspection = JSON.parse(await readFile(process.argv[2], 'utf8'))
+          console.log(JSON.stringify({ compatibility: inspection.compatibility }))
+          NODE
+          }
           restart_dsh() {
             kill "$DSH_PID"
             wait "$DSH_PID" || true
             start_dsh
+            print_compatibility
           }
           post_toggle() {
             local action="$1" output="$2" status
@@ -103,11 +111,7 @@ jobs:
           trap 'kill "$DSH_PID" 2>/dev/null || true' EXIT
           start_dsh
           # Initial v1 body is parsed, not merely treated as an HTTP 2xx.
-          node --input-type=module - "$ISOLATED/inspection.json" <<'NODE'
-          import { readFile } from 'node:fs/promises'
-          const inspection = JSON.parse(await readFile(process.argv[2], 'utf8'))
-          console.log(JSON.stringify({ compatibility: inspection.compatibility }))
-          NODE
+          print_compatibility
           assert_goal "$ISOLATED/inspection.json" inherited false
           curl --fail --silent http://127.0.0.1:39103/api/builtin-toggles > "$ISOLATED/legacy.json"
           post_toggle force-disable "$ISOLATED/force-disable.json"
