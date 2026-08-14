@@ -26,8 +26,9 @@ export interface RuntimeEntryEvidence {
  * roster drift finding.
  */
 const REVIEWED_RC6_RUNTIME_AUGMENTATION_PAIRS = new Map([
-  ['4fbbeb63', '@deepseek-ai/dsh-host-directory-picker-browse'],
-  ['e86f32a6', '@deepseek-ai/dsh-client-ui-directory-picker-browse'],
+  ['0672880e', '@deepseek-ai/dsh-host-directory-picker-browse'],
+  ['acd17651', '@deepseek-ai/dsh-client-ui-directory-picker-browse'],
+  ['7038d3b5', '@deepseek-ai/cordis-plugin-hmr'],
 ])
 
 function isReviewedBootstrapAugmentation(entry: RuntimeEntryEvidence): boolean {
