@@ -2,6 +2,12 @@
 
 > 非官方社区插件（unofficial community plugin）。与 DeepSeek Harness 官方无关，不受官方支持。
 
+## Status
+
+- Community plugin / unofficial
+- Tested with DSH 0.1.0-rc.6（含真实 headless-browser E2E）
+- v0.1.0 preparing for npm release（尚未发布到 npm）
+
 在 DeepSeek Harness（DSH）Web 界面的 **设置 → 插件** 内新增第三个标签页 **内置开关 / Built-ins**：
 查看官方 built-in Loader entries，并用 GUI 开关一小撮经过明确安全审核的、纯 Web UI / presentation 类官方插件。
 
@@ -39,14 +45,24 @@
 
 前置：`dsh` CLI（≥ 0.1.0-rc.6，web profile 已初始化）。
 
+**从源码 / GitHub 安装（当前方式）：**
+
 ```sh
 dsh plugin --profile web add "/绝对/路径/dsh-builtin-toggles"
 ```
 
-- 安装后 profile 的 `dsh.profile.bundles` 会加入 `dsh-builtin-toggles`，`cordis.patch.yml`（bundle layer）只挂载一行：
+**从 npm 安装（发布 v0.1.0 后可用）：**
+
+```sh
+dsh plugin --profile web add dsh-builtin-toggles
+```
+
+两种方式安装后：
+
+- profile 的 `dsh.profile.bundles` 会加入 `dsh-builtin-toggles`，`cordis.patch.yml`（bundle layer）只挂载一行：
   `- insert: { - id: builtin-toggles, name: dsh-builtin-toggles }`。
 - **需要手动重启 DSH web/gateway** 后插件才首次加载（bundle 层在启动时读取）。
-- 构建产物 `lib/` 已提交进 Git，安装无需 prepare/build 脚本、无需授权。
+- 源码安装无需 prepare/build 脚本、无需授权（构建产物 `lib/` 已提交进 Git）；npm 安装同理（发布内容自带 `lib/`）。
 
 ## 卸载
 

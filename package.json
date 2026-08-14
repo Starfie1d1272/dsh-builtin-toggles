@@ -4,6 +4,26 @@
   "description": "A narrow DSH web plugin: view official built-in Loader entries and safely toggle a small, explicitly allowlisted set of presentation-only Web UI plugins from Settings → Plugins → Built-ins.",
   "type": "module",
   "license": "MIT",
+  "keywords": [
+    "deepseek",
+    "deepseek-harness",
+    "dsh",
+    "dsh-plugin",
+    "cordis",
+    "plugin"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Starfie1d1272/dsh-builtin-toggles.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Starfie1d1272/dsh-builtin-toggles/issues"
+  },
+  "homepage": "https://github.com/Starfie1d1272/dsh-builtin-toggles#readme",
+  "engines": {
+    "node": "^22.19.0 || >=24.0.0"
+  },
+  "packageManager": "pnpm@11.21.0",
   "main": "lib/index.js",
   "types": "lib/index.d.ts",
   "exports": {

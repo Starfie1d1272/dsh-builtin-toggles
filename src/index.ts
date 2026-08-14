@@ -40,6 +40,20 @@ export const API_PREFIX = '/api/builtin-toggles'
 const MAX_BODY_BYTES = 4096
 
 /**
+ * Decode a URL-encoded plugin id from the request path. Malformed percent
+ * encoding (`%ZZ`, dangling `%`) must never throw into the HTTP layer:
+ * return null and let the route answer a clean 400 without touching the
+ * runtime or the profile patch.
+ */
+export function decodeEntryId(raw: string): string | null {
+  try {
+    return decodeURIComponent(raw)
+  } catch {
+    return null
+  }
+}
+
+/**
  * Process-wide mutation serialization: every POST runs through this queue,
  * so two browser tabs (or any concurrent callers) can never interleave
  * runtime updates or profile-patch writes. The official per-file writer lock
@@ -173,7 +187,11 @@ export function apply(ctx: Context): void {
 
         const match = /^\/api\/builtin-toggles\/([^/]+)$/.exec(pathname)
         if (method === 'POST' && match !== null) {
-          const id = decodeURIComponent(match[1]!)
+          const id = decodeEntryId(match[1]!)
+          if (id === null) {
+            sendJson(res, 400, { ok: false, error: 'invalid_id', message: 'builtin-toggles: malformed percent-encoding in plugin id' })
+            return
+          }
           let rawBody: unknown
           try {
             const text = await readBody(req, MAX_BODY_BYTES)

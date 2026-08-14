@@ -304,10 +304,17 @@ declare const name = "builtin-toggles";
 declare const inject: string[];
 /** The same-origin API prefix. */
 declare const API_PREFIX = "/api/builtin-toggles";
+/**
+ * Decode a URL-encoded plugin id from the request path. Malformed percent
+ * encoding (`%ZZ`, dangling `%`) must never throw into the HTTP layer:
+ * return null and let the route answer a clean 400 without touching the
+ * runtime or the profile patch.
+ */
+declare function decodeEntryId(raw: string): string | null;
 declare function serializeMutation<T>(run: () => Promise<T>): Promise<T>;
 /** Snapshot rows: manageable + official + self (external packages stay invisible). */
 declare function buildSnapshot(entries: Entry[]): SnapshotPlugin[];
 /** Register the same-origin API; runs for the lifetime of the fiber. */
 declare function apply(ctx: Context): void;
 //#endregion
-export { API_PREFIX, apply, buildSnapshot, inject, name, serializeMutation };
+export { API_PREFIX, apply, buildSnapshot, decodeEntryId, inject, name, serializeMutation };
