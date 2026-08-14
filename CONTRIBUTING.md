@@ -9,7 +9,7 @@ Thanks for contributing to dsh-builtin-toggles.
 dsh-builtin-toggles focuses on two things:
 
 1. explaining official DeepSeek Harness built-in plugins in human-readable terms;
-2. exposing a small, explicitly audited set of safe Web UI toggles.
+2. exposing a small, explicitly audited allowlist of Web UI toggles.
 
 It is intentionally NOT:
 
@@ -23,6 +23,8 @@ Keep proposed changes within this scope unless a separate design discussion has 
 
 ## Development
 
+For code changes, run:
+
 ```sh
 pnpm install
 pnpm typecheck
@@ -30,20 +32,22 @@ pnpm test
 pnpm build
 ```
 
-If generated `lib/` output changes, it must exactly match the committed source build.
-
-Also use:
+Before committing, run the checks relevant to your change, for example:
 
 ```sh
 git diff --check
 npm pack --dry-run
 ```
 
+Documentation-only changes do not need the full runtime/build test suite.
+
+If generated `lib/` output changes, it must exactly match the committed source build.
+
 The npm package intentionally contains only the runtime/package files selected by the package whitelist; documentation such as `docs/` and CONTRIBUTING files does not need to ship in the npm tarball.
 
 ## Catalog contributions
 
-Corrections and improvements to built-in plugin:
+Corrections and improvements to built-in plugin metadata are welcome, including:
 
 - names;
 - descriptions;
@@ -51,9 +55,7 @@ Corrections and improvements to built-in plugin:
 - disable impact;
 - recommendations;
 - lock reasons;
-- status explanations
-
-are welcome.
+- status explanations.
 
 Behavioral claims should include evidence wherever practical, preferably from:
 
@@ -73,11 +75,13 @@ Catalog metadata MUST NOT:
 
 Unknown or insufficiently understood entries remain fail-closed.
 
-## Proposing a new manageable toggle
+## Changes to the manageable allowlist
 
 Changes to MANAGEABLE_IDS are security / runtime-policy changes, not ordinary catalog edits.
 
-A proposed manageable entry must demonstrate that it is an optional Web UI / presentation leaf whose disablement does not break:
+Under the current policy, the allowlist may be narrowed but not expanded. Any future proposal to expand it requires a separate architecture/design discussion before implementation, followed by a deliberate policy change.
+
+If an expansion is ever considered, it must establish that the candidate is an optional Web UI / presentation leaf whose disablement does not break:
 
 - DSH core services;
 - Agent capabilities;
@@ -85,7 +89,7 @@ A proposed manageable entry must demonstrate that it is an optional Web UI / pre
 - required Web infrastructure;
 - other dependent built-ins.
 
-A toggle proposal should include appropriate evidence such as:
+Such a proposal should include appropriate evidence such as:
 
 - dependency and service-consumer review;
 - policy tests;
