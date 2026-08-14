@@ -12,6 +12,7 @@
 import { evaluateCompatibility, type CompatibilityEvaluation, type RuntimeEntryEvidence } from './compatibility.ts'
 import { baselineById, REVIEWED_DSH_WEB_BASELINE, type ReviewedCapabilityBaseline } from './evidence.ts'
 import { MANAGEABLE } from './policy.ts'
+import type { ProfileMutationPreflight } from './profile-patch.ts'
 
 export type EligibilityReason =
   | 'not_manageable'
@@ -21,6 +22,7 @@ export type EligibilityReason =
   | 'target_structural_drift'
   | 'global_structural_drift'
   | 'runtime_identity_mismatch'
+  | 'profile_not_persistable'
 
 export type EligibilityLimitation = 'runtime_identity_unavailable' | 'consumer_graph_not_exposed'
 
@@ -56,6 +58,7 @@ export function evaluateMutationEligibility(
   runtimeEntries: readonly RuntimeEntryEvidence[],
   baseline: readonly ReviewedCapabilityBaseline[] = REVIEWED_DSH_WEB_BASELINE,
   compatibility: CompatibilityEvaluation = evaluateCompatibility(runtimeEntries, baseline),
+  profileMutation: ProfileMutationPreflight = { status: 'writable' },
 ): MutationEligibility {
   const reasons: EligibilityReason[] = []
   const limitations: EligibilityLimitation[] = ['consumer_graph_not_exposed']
@@ -66,6 +69,7 @@ export function evaluateMutationEligibility(
   if (targetEntries.length === 0) addReason(reasons, 'missing_runtime_entry')
   if (reviewed === undefined) addReason(reasons, 'reviewed_baseline_missing')
   if (!hasCompleteSafeLeafEvidence(reviewed)) addReason(reasons, 'reviewed_safe_leaf_evidence_missing')
+  if (profileMutation.status !== 'writable') addReason(reasons, 'profile_not_persistable')
 
   if (compatibility.runtimeIdentity.status === 'unavailable') {
     limitations.push('runtime_identity_unavailable')

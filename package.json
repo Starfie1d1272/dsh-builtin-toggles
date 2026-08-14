@@ -44,7 +44,7 @@
   "scripts": {
     "build": "tsdown",
     "typecheck": "tsc --noEmit",
-    "test": "node --import tsx --test tests/*.spec.ts"
+    "test": "node --expose-internals --import tsx --test tests/*.spec.ts"
   },
   "dsh": {
     "bundle": {
@@ -68,7 +68,10 @@
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "^4.0.1",
+    "@deepseek-ai/cordis-plugin-hmr": "1.0.16",
     "@deepseek-ai/cordis-plugin-loader": "^1.0.2",
+    "@deepseek-ai/cordis-plugin-timer": "1.1.3",
+    "@deepseek-ai/dsh-app-boot": "0.1.0-rc.6",
     "@deepseek-ai/dsh-client-locale": "^0.1.0-rc.6",
     "@deepseek-ai/dsh-client-runtime": "^0.1.0-rc.6",
     "@deepseek-ai/dsh-client-ui-settings": "^0.1.0-rc.6",

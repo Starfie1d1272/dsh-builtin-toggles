@@ -17,7 +17,7 @@ import {
 } from './evidence.ts'
 import { classifyEntry, OFFICIAL_PACKAGE_PREFIX, type EntryFacts, type LockReason } from './policy.ts'
 import { evaluateMutationEligibility, type MutationEligibility } from './eligibility.ts'
-import type { ProfileOverrideInspection } from './profile-patch.ts'
+import type { ProfileMutationPreflight, ProfileOverrideInspection } from './profile-patch.ts'
 
 export const INSPECTION_SCHEMA_VERSION = 'builtin-toggles.inspection/v1'
 export type RuntimeLifecycle = 'inactive' | 'pending' | 'loading' | 'active' | 'failed' | 'unloading' | 'unknown'
@@ -37,6 +37,8 @@ export interface InspectedCapability {
   configuration: {
     /** Profile-layer state; this is separate from Loader lifecycle and effective disabled. */
     profileOverride: ProfileOverrideInspection
+    /** Whether the server can conservatively persist a mutation to this profile row. */
+    profilePersistence: ProfileMutationPreflight
     /** The Loader's current effective result, which can differ while a mutation is in flight. */
     effectiveDisabled: boolean
     /** Agent Preset ownership is shown separately and is never a profile override. */
@@ -80,6 +82,7 @@ export function buildInspectionResponse(
   entries: readonly InspectionRuntimeEntry[],
   runtimeIdentity: RuntimeCompositionIdentity | null = null,
   profileOverrides: ReadonlyMap<string, ProfileOverrideInspection> = new Map(),
+  profilePersistence: ReadonlyMap<string, ProfileMutationPreflight> = new Map(),
 ): InspectionResponseV1 {
   const baseline = baselineById()
   const runtimeEvidence: RuntimeEntryEvidence[] = entries.map((entry) => ({
@@ -98,6 +101,7 @@ export function buildInspectionResponse(
   const capabilities = entries.map((entry): InspectedCapability => {
     const reviewed = baseline.get(entry.id)
     const policy = classifyEntry(entry)
+    const writable = profilePersistence.get(entry.id) ?? { status: 'writable' as const }
     return {
       id: entry.id,
       packageName: entry.name,
@@ -107,6 +111,7 @@ export function buildInspectionResponse(
         profileOverride: profileOverrides.get(entry.id) ?? {
           state: entry.ownDisabled === true ? 'explicitly-disabled' : entry.ownDisabled === false ? 'explicitly-enabled' : 'inherited',
         },
+        profilePersistence: writable,
         effectiveDisabled: entry.disabled,
         agentPresetManaged: reviewed?.managementPlane === 'agent-preset',
       },
@@ -114,7 +119,7 @@ export function buildInspectionResponse(
       category: reviewed?.category ?? unknownCategory(),
       policy: policy.manageable ? { status: 'manageable' } : { status: 'locked', reason: policy.reason },
       verification: findingCodesById.get(entry.id) ?? (reviewed === undefined || !identityVerified ? 'unverified' : 'verified'),
-      mutationEligibility: evaluateMutationEligibility(entry.id, runtimeEvidence, REVIEWED_DSH_WEB_BASELINE, compatibility),
+      mutationEligibility: evaluateMutationEligibility(entry.id, runtimeEvidence, REVIEWED_DSH_WEB_BASELINE, compatibility, writable),
       baseline: {
         reviewed: reviewed !== undefined,
         expectedPackageName: reviewed?.expectedPackageName ?? null,

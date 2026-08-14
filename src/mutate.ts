@@ -10,8 +10,11 @@
  *   1. policy + per-entry eligibility gate (allowlist → body schema → entry
  *      → official module → reviewed structural evidence); any refusal is a
  *      4xx with zero mutation;
- *   2. runtime update via `entry.update({ disabled })` (current session);
- *   3. persist the same override into the profile patch (survives restart);
+ *   2. conservative profile-writer preflight; known persistence refusals are
+ *      returned before the Loader is touched;
+ *   3. force-enable/disable update the Loader, then persist the same override;
+ *      restore persists first and lets DSH's profile/HMR recomposition expose
+ *      the lower layer (Loader `disabled: null` alone cannot do that);
  *   4. on any persistence failure, roll the runtime back to its previous own
  *      `disabled` value and report the error — no half-applied state.
  */
@@ -26,6 +29,8 @@ import { evaluateMutationEligibility } from './eligibility.ts'
 import {
   ConcurrentEditError,
   PatchError,
+  preflightProfileMutation,
+  type ProfileMutationPreflight,
 } from './profile-patch.ts'
 import type { RuntimeEntryEvidence } from './compatibility.ts'
 import type { ReviewedCapabilityBaseline } from './evidence.ts'
@@ -51,6 +56,8 @@ export interface MutateDeps {
   listEntries: () => readonly EntryHandle[]
   /** Test seam only; production always uses the frozen full baseline. */
   eligibilityBaseline?: readonly ReviewedCapabilityBaseline[]
+  /** Read-only writer preflight. The locked writer repeats this at commit time. */
+  profilePreflight?: (file: string, id: string) => ProfileMutationPreflight
   /**
    * Persist the override; returns whether the file changed.
    * Rejects with ConcurrentEditError / PatchError / fs errors.
@@ -113,7 +120,8 @@ export async function runToggle(
     declaredInject: candidate.declaredInject,
     declaredInjectKnown: candidate.declaredInjectKnown,
   }))
-  const eligibility = evaluateMutationEligibility(id, runtimeEvidence, deps.eligibilityBaseline)
+  const profileMutation = deps.profilePreflight?.(deps.patchFile, id) ?? preflightProfileMutation(deps.patchFile, id)
+  const eligibility = evaluateMutationEligibility(id, runtimeEvidence, deps.eligibilityBaseline, undefined, profileMutation)
   if (eligibility.status !== 'eligible') {
     return refuse(409, 'mutation_ineligible', `builtin-toggles: ${id} is not eligible (${eligibility.reasons.join(', ')})`)
   }
@@ -121,7 +129,23 @@ export async function runToggle(
   const disabled = action === 'force-disable' ? true : action === 'force-enable' ? false : null
   const previousOwn = entry!.ownDisabled
 
-  // Runtime first: the Loader is the authority for the current session.
+  // The public Loader's null update deletes only its current option. DSH's
+  // profile watcher is the supported mechanism that re-composes all layers,
+  // so restore must write the profile patch and leave recomposition to HMR.
+  if (action === 'restore-inheritance') {
+    try {
+      const persisted = (await deps.persist(deps.patchFile, id, action)).changed
+      return {
+        status: 200,
+        body: { ok: true, id, action, disabled, runtime: true, persisted },
+      }
+    } catch (error) {
+      return persistFailure(error)
+    }
+  }
+
+  // Runtime first for explicit values: the Loader is the authority for the
+  // current session and persistence failure is rolled back below.
   try {
     await entry!.update({ disabled })
   } catch (error) {
@@ -137,19 +161,19 @@ export async function runToggle(
     if (rollbackError !== undefined) {
       return refuse(500, 'persist_failed', `persist failed (${errorMessage(error, 'write error')}) and runtime rollback also failed (${rollbackError}); profile may be inconsistent`)
     }
-    if (error instanceof ConcurrentEditError) {
-      return refuse(409, 'concurrent_edit', error.message)
-    }
-    if (error instanceof PatchError) {
-      return refuse(500, 'patch_refused', error.message)
-    }
-    return refuse(500, 'persist_failed', errorMessage(error, 'failed to write profile patch'))
+    return persistFailure(error)
   }
 
   return {
     status: 200,
     body: { ok: true, id, action, disabled, runtime: true, persisted },
   }
+}
+
+function persistFailure(error: unknown): MutateError {
+  if (error instanceof ConcurrentEditError) return refuse(409, 'concurrent_edit', error.message)
+  if (error instanceof PatchError) return refuse(500, 'patch_refused', error.message)
+  return refuse(500, 'persist_failed', errorMessage(error, 'failed to write profile patch'))
 }
 
 /** Restore the entry's own disabled field; returns an error message on failure. */

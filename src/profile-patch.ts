@@ -69,8 +69,20 @@ export type ProfileOverrideState = 'inherited' | 'explicitly-enabled' | 'explici
 export interface ProfileOverrideInspection {
   state: ProfileOverrideState | 'unavailable'
   /** An unavailable state is read-only information, never an authorization. */
-  reason?: 'duplicate_top_level_row' | 'non_literal_disabled' | 'profile_unavailable'
+  reason?: 'duplicate_top_level_row' | 'duplicate_disabled_field' | 'non_literal_disabled' | 'profile_unavailable'
 }
+
+/**
+ * Whether the textual writer can conservatively attempt this entry. This is
+ * deliberately distinct from `ProfileOverrideInspection`: a missing patch is
+ * semantically inherited, but is not a file we are permitted to create.
+ */
+export type ProfileMutationPreflight =
+  | { status: 'writable' }
+  | {
+    status: 'unwritable'
+    reason: 'profile_patch_missing' | 'profile_patch_unreadable' | 'duplicate_top_level_row' | 'duplicate_disabled_field' | 'non_literal_disabled'
+  }
 
 /** EOL style of the file, from its first newline; defaults to LF. */
 function detectEol(content: string): string {
@@ -102,6 +114,7 @@ interface TargetRow {
   disabledIndex: number
   disabledValue: boolean | null
   disabledSuffix: string
+  rowInlineComment: string
 }
 
 function targetRows(lines: readonly string[], id: string): number[] {
@@ -132,6 +145,7 @@ function locateTargetRow(lines: readonly string[], id: string): TargetRow | null
     break
   }
   const indent = ' '.repeat(childIndent)
+  const rowInlineComment = /^-\s+id:\s*\S+(\s+#.*)?\s*$/.exec(lines[start]!)?.[1] ?? ''
   const prefix = new RegExp(`^${indent}disabled:`)
   let disabledIndex = -1
   let disabledValue: boolean | null = null
@@ -146,7 +160,7 @@ function locateTargetRow(lines: readonly string[], id: string): TargetRow | null
     disabledValue = literal[1] === 'true'
     disabledSuffix = literal[2] ?? ''
   }
-  return { start, end, indent, disabledIndex, disabledValue, disabledSuffix }
+  return { start, end, indent, disabledIndex, disabledValue, disabledSuffix, rowInlineComment }
 }
 
 /** Read only the current profile-layer override; no YAML reserialization. */
@@ -158,7 +172,39 @@ export function inspectProfileOverride(content: string, id: string): ProfileOver
     return { state: row.disabledValue ? 'explicitly-disabled' : 'explicitly-enabled' }
   } catch (error) {
     const message = error instanceof Error ? error.message : ''
-    return { state: 'unavailable', reason: message.includes('duplicate top-level') ? 'duplicate_top_level_row' : 'non_literal_disabled' }
+    return {
+      state: 'unavailable',
+      reason: message.includes('duplicate top-level')
+        ? 'duplicate_top_level_row'
+        : message.includes('duplicate disabled')
+          ? 'duplicate_disabled_field'
+          : 'non_literal_disabled',
+    }
+  }
+}
+
+/**
+ * Read-only preflight for the known writer rejection paths. It intentionally
+ * does not lock or commit anything: `applyProfilePatch()` still takes the
+ * writer lock and repeats all read/render/concurrency checks at commit time.
+ */
+export function preflightProfileMutation(file: string, id: string): ProfileMutationPreflight {
+  let content: string
+  try {
+    content = readFileSync(file, 'utf8')
+    statSync(file)
+  } catch (error) {
+    const code = error && typeof error === 'object' && 'code' in error ? error.code : undefined
+    return { status: 'unwritable', reason: code === 'ENOENT' ? 'profile_patch_missing' : 'profile_patch_unreadable' }
+  }
+  try {
+    locateTargetRow(content.length === 0 ? [] : content.split(/\r?\n/), id)
+    return { status: 'writable' }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : ''
+    if (message.includes('duplicate top-level')) return { status: 'unwritable', reason: 'duplicate_top_level_row' }
+    if (message.includes('duplicate disabled')) return { status: 'unwritable', reason: 'duplicate_disabled_field' }
+    return { status: 'unwritable', reason: 'non_literal_disabled' }
   }
 }
 
@@ -236,13 +282,23 @@ export function renderRestoreInheritance(content: string, id: string): RenderRes
   const hasComments = lines.slice(target.start + 1, target.end).some((line, index) => {
     const absoluteIndex = target.start + 1 + index
     return absoluteIndex !== target.disabledIndex && line.trimStart().startsWith('#')
-  }) || target.disabledSuffix.trim().length > 0
+  }) || target.disabledSuffix.trim().length > 0 || target.rowInlineComment.length > 0
 
   if (!hasOtherContent && !hasComments) {
     lines.splice(target.disabledIndex, 1)
     lines.splice(target.start, 1)
     // An empty YAML document is not the profile's canonical empty sequence.
     // Keep the file consumable while still deleting the override row itself.
+    if (lines.every((line) => line.trim() === '' || line.trimStart().startsWith('#'))) {
+      const trailing = lines.length > 0 && lines[lines.length - 1] === ''
+      lines.splice(trailing ? lines.length - 1 : lines.length, 0, '[]')
+    }
+  } else if (!hasOtherContent) {
+    // A minimal override may still carry an inline id comment. Once the row
+    // itself is removed, retain that comment as a standalone YAML comment.
+    lines.splice(target.disabledIndex, 1)
+    lines.splice(target.start, 1)
+    if (target.rowInlineComment.length > 0) lines.splice(target.start, 0, target.rowInlineComment.trimStart())
     if (lines.every((line) => line.trim() === '' || line.trimStart().startsWith('#'))) {
       const trailing = lines.length > 0 && lines[lines.length - 1] === ''
       lines.splice(trailing ? lines.length - 1 : lines.length, 0, '[]')

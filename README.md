@@ -25,9 +25,9 @@ dsh plugin --profile web add dsh-builtin-toggles
 - **中文官方内置插件目录**：为当前 Web Loader 中的官方内置插件提供中文名称、一句话说明和分类；展开卡片可查看“关闭后 / 建议”（可管理项）或“为什么锁定 / 状态说明”（锁定项）。
 - **本地搜索**：按名称、功能、ID 或包名过滤全部条目，不请求网络。
 - **Agent Preset 状态解释**：`tool-*` / `plan-mode` 等由 Agent Preset 按会话组装的能力，统一显示“由 Agent 预设管理”，不会误导为“功能已关闭”。
-- **9 个经过审核的安全 UI 开关**：`ui-deliverables`、`ui-jobs`、`ui-goal`、`ui-message-feedback`、`ui-model-selection`、`ui-agent-preset`、`ui-skill`、`ui-subagent`、`ui-trajectory` —— 都是纯界面插件；这些开关作用于 DSH 的 `web` profile，因此会影响所有 Web 会话，不会修改 Agent 预设；开关立即生效于 Host 运行时并持久化到 profile patch，重启后保持。
+- **9 个经过审核的安全 UI 开关**：`ui-deliverables`、`ui-jobs`、`ui-goal`、`ui-message-feedback`、`ui-model-selection`、`ui-agent-preset`、`ui-skill`、`ui-subagent`、`ui-trajectory` —— 都是纯界面插件；这些开关作用于 DSH 的 `web` profile，因此会影响所有 Web 会话，不会修改 Agent 预设；强制开关会更新 Host 并持久化，恢复继承则由 DSH profile/HMR 重组重新暴露下层值。
 - **其余插件 fail-closed 锁定**：核心服务、Agent 能力与未知条目一律锁定，不提供开关。
-- **能力检查与保守授权 API**：`GET /api/builtin-toggles/v1/inspection` 提供版本化、无本地化文案的 Loader 清单、审阅基线、配置三态、兼容性与服务端计算的逐条 mutation eligibility。Host 未公开运行时发布身份时，inspection 会诚实标为 `unverified`；这不会单独关闭已审核 leaf，但新增官方条目、包/`inject`/重复 id 等结构变化会因无法建立 consumer 图而保守拒绝写入。详见 [Inspection API v1](docs/inspection-api.md)。
+- **能力检查与保守授权 API**：`GET /api/builtin-toggles/v1/inspection` 提供版本化、无本地化文案的 Loader 清单、审阅基线、配置三态、独立的 profile 可持久化预检、兼容性与服务端计算的逐条 mutation eligibility。Host 未公开运行时发布身份时，inspection 会诚实标为 `unverified`；这不会单独关闭已审核 leaf，但可观测的新增官方条目、包/`inject`/重复 id 等结构变化会因无法建立 consumer 图而保守拒绝写入。它不宣称能发现不可观测的未来内部 consumer 变化。详见 [Inspection API v1](docs/inspection-api.md)。
 
 ## 安全模型
 

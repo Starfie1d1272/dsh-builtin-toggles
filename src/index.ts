@@ -26,7 +26,7 @@ import type {} from '@deepseek-ai/dsh-host-webserver'
 import { runToggle, type EntryHandle } from './mutate.ts'
 import { buildInspectionResponse, type InspectionRuntimeEntry } from './inspection.ts'
 import { classifyEntry, type EntryFacts, type SnapshotPlugin } from './policy.ts'
-import { applyDisabledOverride, inspectProfileOverride, profilePatchPath, restoreDisabledInheritance, type ProfileOverrideInspection } from './profile-patch.ts'
+import { applyDisabledOverride, inspectProfileOverride, preflightProfileMutation, profilePatchPath, restoreDisabledInheritance, type ProfileMutationPreflight, type ProfileOverrideInspection } from './profile-patch.ts'
 import { isTrustedRequest } from './trust.ts'
 
 /** Cordis plugin identity. */
@@ -197,6 +197,14 @@ function profileOverrideSnapshot(entries: readonly InspectionRuntimeEntry[]): Re
   return states
 }
 
+/** Same read-only writer gate used by POST before any Loader update. */
+function profilePersistenceSnapshot(entries: readonly InspectionRuntimeEntry[]): ReadonlyMap<string, ProfileMutationPreflight> {
+  const states = new Map<string, ProfileMutationPreflight>()
+  const file = profilePatchPath('web')
+  for (const entry of entries) states.set(entry.id, preflightProfileMutation(file, entry.id))
+  return states
+}
+
 /** Register the same-origin API; runs for the lifetime of the fiber. */
 export function apply(ctx: Context): void {
   ctx.effect(() => {
@@ -227,7 +235,12 @@ export function apply(ctx: Context): void {
           // Host release identity. Do not infer one from module resolution,
           // process paths, or private Loader fields: no identity means the
           // read-only API must remain unverified.
-          sendJson(res, 200, buildInspectionResponse(entries, null, profileOverrideSnapshot(entries)))
+          sendJson(res, 200, buildInspectionResponse(
+            entries,
+            null,
+            profileOverrideSnapshot(entries),
+            profilePersistenceSnapshot(entries),
+          ))
           return
         }
 
@@ -255,6 +268,7 @@ export function apply(ctx: Context): void {
           const result = await serializeMutation(() => runToggle(
             {
               patchFile: profilePatchPath('web'),
+              profilePreflight: preflightProfileMutation,
               listEntries: () => [...ctx.loader.entries()]
                 .filter((entry) => !entry.options.group)
                 .map(entryHandle),

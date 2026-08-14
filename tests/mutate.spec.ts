@@ -31,6 +31,7 @@ function deps(handle: EntryHandle | undefined, trace: Trace): MutateDeps {
     patchFile: '/tmp/fake/cordis.patch.yml',
     listEntries: () => handle === undefined ? [] : [handle],
     eligibilityBaseline: [REVIEWED_DSH_WEB_BASELINE.find((candidate) => candidate.id === 'ui-goal')!],
+    profilePreflight: () => ({ status: 'writable' }),
     persist: async (_file, id, action) => {
       trace.persists.push({ id, action })
       if (trace.persistError !== undefined) throw trace.persistError
@@ -88,7 +89,7 @@ describe('runToggle', () => {
     assert.deepEqual(trace.persists, [{ id: 'ui-goal', action: 'force-disable' }])
   })
 
-  it('supports explicit force enable and restore inheritance actions', async () => {
+  it('supports explicit force enable and restores inheritance through persisted profile recomposition', async () => {
     const enableTrace: Trace = { updates: [], persists: [] }
     const enable = await runToggle(deps(trackingEntry(enableTrace), enableTrace), 'ui-goal', { action: 'force-enable' })
     assert.equal(enable.status, 200)
@@ -99,9 +100,29 @@ describe('runToggle', () => {
     const restore = await runToggle(deps(trackingEntry(restoreTrace), restoreTrace), 'ui-goal', { action: 'restore-inheritance' })
     assert.equal(restore.status, 200)
     if (restore.body.ok) assert.equal(restore.body.disabled, null)
-    assert.deepEqual(restoreTrace.updates, [null])
+    // `Entry.update({ disabled: null })` cannot recompose lower profile layers.
+    assert.deepEqual(restoreTrace.updates, [])
     assert.deepEqual(restoreTrace.persists, [{ id: 'ui-goal', action: 'restore-inheritance' }])
   })
+
+  for (const reason of [
+    'profile_patch_missing',
+    'profile_patch_unreadable',
+    'duplicate_top_level_row',
+    'duplicate_disabled_field',
+    'non_literal_disabled',
+  ] as const) {
+    it(`profile preflight ${reason} → 409 before runtime update or persistence`, async () => {
+      const trace: Trace = { updates: [], persists: [] }
+      const testDeps = deps(trackingEntry(trace), trace)
+      testDeps.profilePreflight = () => ({ status: 'unwritable', reason })
+      const result = await runToggle(testDeps, 'ui-goal', { action: 'force-disable' })
+      assert.equal(result.status, 409)
+      assert.equal(result.body.error, 'mutation_ineligible')
+      assert.deepEqual(trace.updates, [])
+      assert.deepEqual(trace.persists, [])
+    })
+  }
 
   it('refuses package mismatch and duplicate target before runtime or persistence', async () => {
     const mismatchTrace: Trace = { updates: [], persists: [] }

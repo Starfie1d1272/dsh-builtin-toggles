@@ -14,6 +14,7 @@ import {
   ConcurrentEditError,
   inspectProfileOverride,
   PatchError,
+  preflightProfileMutation,
   renderRestoreInheritance,
   restoreDisabledInheritance,
   renderDisabledPatch,
@@ -177,6 +178,11 @@ describe('effective profile override state and restore inheritance', () => {
     const result = renderRestoreInheritance('- id: ui-jobs\r\n  disabled: false\r\n- id: ui-goal\r\n  disabled: true\r\n', 'ui-goal')
     assert.equal(result.content, '- id: ui-jobs\r\n  disabled: false\r\n')
   })
+
+  it('preserves a target id inline comment while removing its minimal row', () => {
+    const result = renderRestoreInheritance('- id: ui-goal # explanation\n  disabled: true\n', 'ui-goal')
+    assert.equal(result.content, '# explanation\n[]\n')
+  })
 })
 
 describe('applyDisabledOverride (official lock + atomic write)', () => {
@@ -242,6 +248,23 @@ describe('applyDisabledOverride (official lock + atomic write)', () => {
   it('missing profile patch → refuses to create it implicitly', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'builtin-toggles-'))
     await assert.rejects(() => applyDisabledOverride(join(dir, 'nope.yml'), 'ui-goal', true), PatchError)
+  })
+
+  it('preflights known writer refusal paths without attempting a mutation', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'builtin-toggles-'))
+    assert.deepEqual(preflightProfileMutation(join(dir, 'missing.yml'), 'ui-goal'), {
+      status: 'unwritable', reason: 'profile_patch_missing',
+    })
+
+    const duplicate = tempFile('- id: ui-goal\n  disabled: true\n- id: ui-goal\n  disabled: false\n')
+    assert.deepEqual(preflightProfileMutation(duplicate, 'ui-goal'), {
+      status: 'unwritable', reason: 'duplicate_top_level_row',
+    })
+
+    const nonLiteral = tempFile('- id: ui-goal\n  disabled: !!js ctx.flag\n')
+    assert.deepEqual(preflightProfileMutation(nonLiteral, 'ui-goal'), {
+      status: 'unwritable', reason: 'non_literal_disabled',
+    })
   })
 
   it('restore uses the same lock, optimistic concurrency refusal and atomic writer', async () => {

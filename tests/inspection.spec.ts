@@ -164,7 +164,7 @@ describe('inspection API v1 DTO', () => {
     assert.equal(response.compatibility.runtimeIdentity.status, 'unavailable')
     assert.deepEqual(response.capabilities[0]?.runtimeState, { disabled: false, lifecycle: 'active' })
     assert.deepEqual(response.capabilities[0]?.configuration, {
-      profileOverride: { state: 'inherited' }, effectiveDisabled: false, agentPresetManaged: false,
+      profileOverride: { state: 'inherited' }, profilePersistence: { status: 'writable' }, effectiveDisabled: false, agentPresetManaged: false,
     })
     // The partial fixture intentionally lacks the rest of the frozen roster,
     // so mutation is refused while read-only inspection remains available.
@@ -193,6 +193,20 @@ describe('inspection API v1 DTO', () => {
     assert.equal(goal.configuration.effectiveDisabled, true)
     assert.equal(plan.configuration.profileOverride.state, 'explicitly-enabled')
     assert.equal(plan.configuration.agentPresetManaged, true)
+  })
+
+  it('reports an unwritable profile patch as eligibility evidence without changing inherited semantics', () => {
+    const response = buildInspectionResponse(
+      reviewedRc6RuntimeFixture().map((entry) => inspected({ id: entry.id, name: entry.packageName })),
+      null,
+      new Map([['ui-goal', { state: 'inherited' as const }]]),
+      new Map([['ui-goal', { status: 'unwritable' as const, reason: 'non_literal_disabled' as const }]]),
+    )
+    const goal = response.capabilities.find((entry) => entry.id === 'ui-goal')!
+    assert.deepEqual(goal.configuration.profileOverride, { state: 'inherited' })
+    assert.deepEqual(goal.configuration.profilePersistence, { status: 'unwritable', reason: 'non_literal_disabled' })
+    assert.equal(goal.mutationEligibility.status, 'ineligible')
+    assert.ok(goal.mutationEligibility.reasons.includes('profile_not_persistable'))
   })
 
   it('exposes reviewed evidence independently from the existing policy projection', () => {
