@@ -101,6 +101,8 @@ describe('compatibility evaluation', () => {
       runtime(),
       runtime({ id: 'runtime-hmr', packageName: '@deepseek-ai/cordis-plugin-hmr' }),
       runtime({ id: 'platform-picker', packageName: '@deepseek-ai/dsh-host-directory-picker-native' }),
+      runtime({ id: 'browse-picker-host', packageName: '@deepseek-ai/dsh-host-directory-picker-browse' }),
+      runtime({ id: 'browse-picker-client', packageName: '@deepseek-ai/dsh-client-ui-directory-picker-browse' }),
     ], oneBaseline, reviewedRc6Identity)
     assert.equal(result.status, 'verified')
     assert.deepEqual(result.findings, [])

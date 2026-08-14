@@ -58,7 +58,7 @@ Loader `inject` string arrays are compared as unordered service sets, matching
 Cordis injection resolution.
 
 The rc.6 DSH bootstrap also creates a small, exact set of platform helpers
-(HMR and native directory-picker adapters) after composing the two published
+(HMR plus native and browse directory-picker adapters) after composing the two published
 patches. They remain unlisted and locked. Their opaque generated runtime ids
 are not treated as new patch-composition rows; any other new official runtime
 entry still produces structural drift.

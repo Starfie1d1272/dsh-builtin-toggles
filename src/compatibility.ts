@@ -29,6 +29,8 @@ const REVIEWED_RC6_BOOTSTRAP_AUGMENTATION_PACKAGES = new Set([
   '@deepseek-ai/cordis-plugin-hmr',
   '@deepseek-ai/dsh-host-directory-picker-native',
   '@deepseek-ai/dsh-client-ui-directory-picker-native',
+  '@deepseek-ai/dsh-host-directory-picker-browse',
+  '@deepseek-ai/dsh-client-ui-directory-picker-browse',
 ])
 
 function isReviewedBootstrapAugmentation(entry: RuntimeEntryEvidence): boolean {
