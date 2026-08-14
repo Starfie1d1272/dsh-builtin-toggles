@@ -87,12 +87,21 @@ jobs:
             wait "$DSH_PID" || true
             start_dsh
           }
+          post_toggle() {
+            local action="$1" output="$2" status
+            status="$(curl --silent --show-error -o "$output" -w '%{http_code}' -X POST -H 'content-type: application/json' --data "{\"action\":\"$action\"}" http://127.0.0.1:39103/api/builtin-toggles/ui-goal)"
+            if [ "$status" != 200 ]; then
+              echo "toggle $action returned HTTP $status" >&2
+              cat "$output" >&2
+              return 1
+            fi
+          }
           trap 'kill "$DSH_PID" 2>/dev/null || true' EXIT
           start_dsh
           # Initial v1 body is parsed, not merely treated as an HTTP 2xx.
           assert_goal "$ISOLATED/inspection.json" inherited false
           curl --fail --silent http://127.0.0.1:39103/api/builtin-toggles > "$ISOLATED/legacy.json"
-          curl --fail --silent -X POST -H 'content-type: application/json' --data '{"action":"force-disable"}' http://127.0.0.1:39103/api/builtin-toggles/ui-goal > "$ISOLATED/force-disable.json"
+          post_toggle force-disable "$ISOLATED/force-disable.json"
           node --input-type=module - "$ISOLATED/force-disable.json" <<'NODE'
           import { readFile } from 'node:fs/promises'
           const result = JSON.parse(await readFile(process.argv[2], 'utf8'))
@@ -103,7 +112,7 @@ jobs:
           # Explicit profile overrides must survive an actual DSH restart.
           restart_dsh
           assert_goal "$ISOLATED/inspection.json" explicitly-disabled true
-          curl --fail --silent -X POST -H 'content-type: application/json' --data '{"action":"force-enable"}' http://127.0.0.1:39103/api/builtin-toggles/ui-goal > "$ISOLATED/force-enable.json"
+          post_toggle force-enable "$ISOLATED/force-enable.json"
           node --input-type=module - "$ISOLATED/force-enable.json" <<'NODE'
           import { readFile } from 'node:fs/promises'
           const result = JSON.parse(await readFile(process.argv[2], 'utf8'))
@@ -111,7 +120,7 @@ jobs:
           NODE
           wait_for_inspection "$ISOLATED/after-enable.json"
           assert_goal "$ISOLATED/after-enable.json" explicitly-enabled false
-          curl --fail --silent -X POST -H 'content-type: application/json' --data '{"action":"restore-inheritance"}' http://127.0.0.1:39103/api/builtin-toggles/ui-goal > "$ISOLATED/restore.json"
+          post_toggle restore-inheritance "$ISOLATED/restore.json"
           node --input-type=module - "$ISOLATED/restore.json" <<'NODE'
           import { readFile } from 'node:fs/promises'
           const result = JSON.parse(await readFile(process.argv[2], 'utf8'))
