@@ -49,6 +49,10 @@ jobs:
           mkdir -p "$ISOLATED"
           cd "$ISOLATED"
           npm init -y >/dev/null
+          # rc.6 permits a newer AWS SDK leaf than has reached the public registry.
+          # Keep the real reviewed DSH package installable without changing its
+          # profile/runtime composition under test.
+          npm pkg set 'overrides.@aws-sdk/credential-provider-ini=3.973.13'
           npm install @deepseek-ai/dsh@0.1.0-rc.6 "$GITHUB_WORKSPACE/.agent-tmp/compatibility/$PLUGIN_TARBALL"
           export DSH_HOME="$ISOLATED/home"
           DSH="$ISOLATED/node_modules/.bin/dsh"
