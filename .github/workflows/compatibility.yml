@@ -56,10 +56,13 @@ jobs:
           wait_for_inspection() {
             local output="$1"
             for attempt in $(seq 1 40); do
-              curl --fail --silent http://127.0.0.1:39103/api/builtin-toggles/v1/inspection > "$output" && test -s "$output" && return
+              if curl --fail --silent http://127.0.0.1:39103/api/builtin-toggles/v1/inspection > "$output" && test -s "$output"; then
+                return 0
+              fi
               sleep 1
             done
             echo 'timed out waiting for v1 inspection' >&2
+            cat "$ISOLATED/dsh.log" >&2 || true
             return 1
           }
           assert_goal() {
