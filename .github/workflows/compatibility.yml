@@ -72,7 +72,7 @@ jobs:
           if (!goal) throw new Error('inspection missing ui-goal')
           if (goal.configuration?.profileOverride?.state !== expectedOverride) throw new Error(`expected ${expectedOverride}, got ${goal.configuration?.profileOverride?.state}`)
           if (expectedDisabled !== '-' && String(goal.configuration?.effectiveDisabled) !== expectedDisabled) throw new Error(`expected effectiveDisabled=${expectedDisabled}, got ${goal.configuration?.effectiveDisabled}`)
-NODE
+          NODE
           }
           start_dsh() {
             "$DSH" web --port 39103 > "$ISOLATED/dsh.log" 2>&1 &
@@ -94,7 +94,7 @@ NODE
           import { readFile } from 'node:fs/promises'
           const result = JSON.parse(await readFile(process.argv[2], 'utf8'))
           if (result.runtimeEffect !== 'applied') throw new Error('force-disable was not runtime-applied')
-NODE
+          NODE
           wait_for_inspection "$ISOLATED/after-disable.json"
           assert_goal "$ISOLATED/after-disable.json" explicitly-disabled true
           # Explicit profile overrides must survive an actual DSH restart.
@@ -105,7 +105,7 @@ NODE
           import { readFile } from 'node:fs/promises'
           const result = JSON.parse(await readFile(process.argv[2], 'utf8'))
           if (result.runtimeEffect !== 'applied') throw new Error('force-enable was not runtime-applied')
-NODE
+          NODE
           wait_for_inspection "$ISOLATED/after-enable.json"
           assert_goal "$ISOLATED/after-enable.json" explicitly-enabled false
           curl --fail --silent -X POST -H 'content-type: application/json' --data '{"action":"restore-inheritance"}' http://127.0.0.1:39103/api/builtin-toggles/ui-goal > "$ISOLATED/restore.json"
@@ -113,14 +113,14 @@ NODE
           import { readFile } from 'node:fs/promises'
           const result = JSON.parse(await readFile(process.argv[2], 'utf8'))
           if (result.runtimeEffect !== 'recomposing') throw new Error('restore incorrectly claimed immediate runtime application')
-NODE
+          NODE
           for attempt in $(seq 1 20); do
             wait_for_inspection "$ISOLATED/after-restore.json"
             if node --input-type=module - "$ISOLATED/after-restore.json" <<'NODE'
           import { readFile } from 'node:fs/promises'
           const inspection = JSON.parse(await readFile(process.argv[2], 'utf8'))
           process.exit(inspection.capabilities?.find((entry) => entry.id === 'ui-goal')?.configuration?.profileOverride?.state === 'inherited' ? 0 : 1)
-NODE
+          NODE
             then break; fi
             sleep 1
           done
@@ -177,7 +177,7 @@ NODE
           report.reviewStatus = 'observational-only'
           report.supported = false
           await writeFile(file, `${JSON.stringify(report)}\n`)
-NODE
+          NODE
           else
             printf '{"package":"@deepseek-ai/dsh","observedVersion":"%s","status":"artifact-unavailable","reviewStatus":"observational-only","supported":false}\n' "$VERSION" > compatibility-current-public.json
           fi
