@@ -22,9 +22,10 @@ dsh plugin --profile web add dsh-builtin-toggles
 
 ## 功能
 
-- **中文官方内置插件目录**：为当前 Web Loader 中的官方内置插件提供中文名称、一句话说明和分类；展开卡片可查看“关闭后 / 建议”（可管理项）或“为什么锁定 / 状态说明”（锁定项）。
-- **本地搜索**：按名称、功能、ID 或包名过滤全部条目，不请求网络。
-- **Agent Preset 状态解释**：`tool-*` / `plan-mode` 等由 Agent Preset 按会话组装的能力，统一显示“由 Agent 预设管理”，不会误导为“功能已关闭”。
+- **Capability Inspector**：检查当前 Web Loader 的所有 capability（包括 external、未审阅和异常条目），逐项显示运行状态、三态 profile override、Agent Preset ownership、审核溯源、依赖证据、兼容性发现与服务端计算的 mutation eligibility。
+- **Compatibility / Doctor 摘要**：明确区分 `verified`、`drifted`、`unverified`；运行时发布身份不可用时如实标为 `unverified`，不将其表述为系统故障，也不把它当作 mutation eligibility 的替代。
+- **本地筛选与诊断**：按 ID/包名搜索，并可按类别、管理平面、策略、验证、运行状态及异常筛选；可复制不含本地路径和配置内容的诊断报告。
+- **Agent Preset 状态解释**：`tool-*` / `plan-mode` 等由 Agent Preset 按会话组装的 capability 单独标注，绝不误认为 profile override。
 - **9 个经过审核的安全 UI 开关**：`ui-deliverables`、`ui-jobs`、`ui-goal`、`ui-message-feedback`、`ui-model-selection`、`ui-agent-preset`、`ui-skill`、`ui-subagent`、`ui-trajectory` —— 都是纯界面插件；这些开关作用于 DSH 的 `web` profile，因此会影响所有 Web 会话，不会修改 Agent 预设；强制开关会更新 Host 并持久化，恢复继承则由 DSH profile/HMR 重组重新暴露下层值。
 - **其余插件 fail-closed 锁定**：核心服务、Agent 能力与未知条目一律锁定，不提供开关。
 - **能力检查与保守授权 API**：`GET /api/builtin-toggles/v1/inspection` 提供版本化、无本地化文案的 Loader 清单、审阅基线、配置三态、独立的 profile 可持久化预检、兼容性与服务端计算的逐条 mutation eligibility。Host 未公开运行时发布身份时，inspection 会诚实标为 `unverified`；这不会单独关闭已审核 leaf，但可观测的新增官方条目、包/`inject`/重复 id 等结构变化会因无法建立 consumer 图而保守拒绝写入。它不宣称能发现不可观测的未来内部 consumer 变化。详见 [Inspection API v1](docs/inspection-api.md)。
@@ -33,7 +34,7 @@ dsh plugin --profile web add dsh-builtin-toggles
 
 可管理性完全来自 `src/policy.ts` 的精确显式 allowlist（`MANAGEABLE_IDS`），没有“名字看起来像 UI 所以允许”的启发式；服务端在每次开关请求时重新执行全部检查（allowlist、body 合法性、entry 存在、`@deepseek-ai/*` 包名、非插件自身），任何一条不满足都拒绝。UI 隐藏按钮不是安全边界。
 
-目录（`src/client/catalog.zh.ts`）是纯展示层：条目没有 `manageable` / `enabled` / `disabled` / `allowToggle` / `policy` 字段，`PRESET_MANAGED_IDS` 也只是展示元数据——目录绝不参与授权。
+inspector 只消费服务端 v1 inspection DTO；类别、审核信息、兼容性与 eligibility 都不由浏览器从 catalog、ID 模式或 compatibility 状态推导。旧目录元数据也绝不参与授权。
 
 ## 兼容性
 

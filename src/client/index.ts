@@ -5,7 +5,7 @@
  * section via `settings.plugins.tab` (the canonical extension point — NOT a
  * new settings.section). Everything else comes from the host half's same-origin
  * API; the tab itself holds no state beyond the last snapshot. The display-only
- * catalog (catalog.ts / catalog.zh.ts) annotates every row.
+ * locale-aware display-only catalogs annotate every row.
  */
 
 import type {} from '@deepseek-ai/dsh-client-locale/client'
@@ -14,7 +14,8 @@ import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import { BuiltinTogglesTab } from './BuiltinTogglesTab.tsx'
 import { en, zh, type BuiltinTogglesLocaleKey } from './locales.ts'
 
-export type { BuiltinTogglesTabProps, SnapshotPlugin } from './BuiltinTogglesTab.tsx'
+export type { BuiltinTogglesTabProps } from './BuiltinTogglesTab.tsx'
+export type { Capability, InspectionSnapshot, InspectorFilters, MutationAction } from './inspector-model.ts'
 export type { BuiltinTogglesLocaleKey } from './locales.ts'
 export type { BuiltinCatalogEntry, BuiltinCategory, SearchTarget } from './catalog.ts'
 export {
@@ -26,6 +27,8 @@ export {
   resolveCatalogEntry,
 } from './catalog.ts'
 export { getBuiltinCatalogEntry } from './catalog.zh.ts'
+export { getEnglishCatalogEntry } from './catalog.en.ts'
+export { getCapabilityPresentation } from './presentation.ts'
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface LocaleNamespaceMap {
