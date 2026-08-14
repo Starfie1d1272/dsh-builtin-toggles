@@ -8,8 +8,11 @@ import {
   baselineById,
   REVIEWED_DSH_WEB_BASELINE,
   type CapabilityCategory,
+  type DependencyEvidence,
   type ManagementPlane,
   type ReviewedReference,
+  type ServiceEvidence,
+  type LeafReview,
 } from './evidence.ts'
 import { classifyEntry, OFFICIAL_PACKAGE_PREFIX, type EntryFacts, type LockReason } from './policy.ts'
 
@@ -33,6 +36,9 @@ export interface InspectedCapability {
     reviewed: boolean
     expectedPackageName: string | null
     reviewedReference: ReviewedReference | null
+    serviceEvidence: readonly ServiceEvidence[]
+    dependencyEvidence: DependencyEvidence | null
+    leafReview: LeafReview | null
     rationale: string | null
   }
 }
@@ -83,6 +89,9 @@ export function buildInspectionResponse(entries: readonly InspectionRuntimeEntry
         reviewed: reviewed !== undefined,
         expectedPackageName: reviewed?.expectedPackageName ?? null,
         reviewedReference: reviewed?.reviewedReference ?? null,
+        serviceEvidence: reviewed?.serviceEvidence ?? [],
+        dependencyEvidence: reviewed?.dependencyEvidence ?? null,
+        leafReview: reviewed?.leafReview ?? null,
         rationale: reviewed?.rationale ?? null,
       },
     }

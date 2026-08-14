@@ -1,6 +1,6 @@
 {
   "name": "dsh-builtin-toggles",
-  "version": "0.3.0",
+  "version": "0.2.0",
   "description": "Built-in plugin catalog and safe GUI toggles for DeepSeek Harness Web.",
   "type": "module",
   "license": "MIT",

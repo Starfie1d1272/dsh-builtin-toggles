@@ -40,7 +40,7 @@ dsh plugin --profile web add dsh-builtin-toggles
 - Tested with DSH 0.1.0-rc.6（隔离 DSH_HOME + headless Chromium 真实浏览器验证）。
 - 开关的运行时效果是 Host 侧**立即生效**；已打开的浏览器页面需要**刷新后**才应用 client-side 改变（rc.6 行为），切换成功后面板会提示“刷新页面后生效”。
 - 持久化写入 profile 的 `cordis.patch.yml`，重启后保持。
-- v0.3.0 的兼容性结果是审计信号，不是切换授权信号；对未能独立确认的历史基线包身份会明确标为 `unverified`，不会仅凭版本号声称兼容。
+- inspection foundation 的兼容性结果是审计信号，不是切换授权信号；已审阅 rc.6 发布补丁组合会校验完整包身份，未知或证据不足的环境仍明确标为 `unverified`，不会仅凭版本号声称兼容。
 
 ## 卸载
 

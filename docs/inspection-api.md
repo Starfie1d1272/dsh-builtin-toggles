@@ -13,19 +13,25 @@ allowlist, package scope, request trust, serialization, and profile writer.
 
 Compatibility is `verified` only when every evaluated assertion matches;
 `drifted` when an expected entry is missing, a new official entry appears, a
-reviewed package identity changes, or a reviewed `inject` declaration changes;
-and `unverified` when a reviewed expectation is intentionally incomplete.
-The rc.6 roster has exact package assertions only where the published Web
-patch directly supplied them. Other roster ids remain expected for presence,
-but surface `baseline_package_unknown` rather than claiming a package identity
-that this plugin did not independently review.
+reviewed package identity changes, a reviewed `inject` declaration changes, or
+the runtime contains a duplicate Loader id; and `unverified` when a reviewed
+expectation is intentionally incomplete. Loader `inject` string arrays are
+compared as unordered service sets, matching Cordis injection resolution.
 
-Review input is exposed as `baseline.reviewedReference` when available: the
-published `@deepseek-ai/dsh-web-app@0.1.0-rc.6` `cordis.patch.yml`. At review
-time, current upstream `master` (2026-08-13) still declared the base/Web bundle
-manifests as rc.5 while npm served rc.6. That discrepancy is why version
-equality is deliberately not a compatibility predicate; runtime composition,
-module identity, and declared injection evidence are checked instead.
+The complete rc.6 package-identity baseline comes from the published
+`@deepseek-ai/dsh-base@0.1.0-rc.6` and
+`@deepseek-ai/dsh-web-app@0.1.0-rc.6` `cordis.patch.yml` files. Its provenance
+is explicitly `npm-published-patch`: it is not represented as upstream-source
+or live-runtime evidence. A separately started rc.6 Web instance confirmed
+browser boot artifacts, but did not expose a complete Loader id-to-package
+snapshot; it therefore does not upgrade the patch provenance. Version equality
+alone remains insufficient: runtime composition, exact module identity, and
+declared injection evidence are checked.
+
+The capability baseline also carries bounded audit observations. Nine current
+safe UI leaves are recorded as such, while `ui-commands` records its observed
+`commandUi` service and known consumers. Any provides/consumers not established
+by that audit remain `unknown`; evidence never grants mutation authority.
 
 PR 1 is inspection only. Compatibility results intentionally do not change
 current toggle or reset behavior; using them to tighten mutation is deferred
