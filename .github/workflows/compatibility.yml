@@ -1,0 +1,105 @@
+name: Upstream compatibility observation
+
+on:
+  schedule:
+    - cron: '17 4 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  reviewed-rc6:
+    name: reviewed rc.6 gate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: pnpm/action-setup@9fd676a19091d4595eefd76e4bd31c97133911f1
+        with:
+          version: 11.21.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22.19.0
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - name: Pack reviewed DSH artifacts in an isolated directory
+        run: |
+          set -euo pipefail
+          mkdir -p .agent-tmp/compatibility
+          npm pack --pack-destination .agent-tmp/compatibility @deepseek-ai/dsh-base@0.1.0-rc.6 @deepseek-ai/dsh-web-app@0.1.0-rc.6
+          BASE_TARBALL="$(find .agent-tmp/compatibility -maxdepth 1 -name '*dsh-base*.tgz' -print -quit)"
+          WEB_TARBALL="$(find .agent-tmp/compatibility -maxdepth 1 -name '*dsh-web-app*.tgz' -print -quit)"
+          test -n "$BASE_TARBALL" && test -n "$WEB_TARBALL"
+          tar -xzf "$BASE_TARBALL" -C .agent-tmp/compatibility
+          mv .agent-tmp/compatibility/package .agent-tmp/compatibility/dsh-base
+          tar -xzf "$WEB_TARBALL" -C .agent-tmp/compatibility
+          mv .agent-tmp/compatibility/package .agent-tmp/compatibility/dsh-web-app
+          pnpm verify:baseline .agent-tmp/compatibility/dsh-base/cordis.patch.yml .agent-tmp/compatibility/dsh-web-app/cordis.patch.yml | tee .agent-tmp/compatibility/baseline.json
+      - name: Exercise legacy, v1, mutation, restore, drift, and trust fences
+        run: pnpm test
+      - name: Validate the generated plugin tarball
+        run: pnpm pack:check
+      - name: Install, load, restart, and smoke the reviewed DSH Web profile
+        run: |
+          set -euo pipefail
+          PLUGIN_TARBALL="$(npm pack --silent --pack-destination .agent-tmp/compatibility)"
+          ISOLATED="$RUNNER_TEMP/dsh-builtin-toggles-rc6"
+          mkdir -p "$ISOLATED"
+          cd "$ISOLATED"
+          npm init -y >/dev/null
+          npm install --ignore-scripts @deepseek-ai/dsh@0.1.0-rc.6 "$GITHUB_WORKSPACE/.agent-tmp/compatibility/$PLUGIN_TARBALL"
+          export DSH_HOME="$ISOLATED/home"
+          DSH="$ISOLATED/node_modules/.bin/dsh"
+          "$DSH" plugin --profile web add "$GITHUB_WORKSPACE/.agent-tmp/compatibility/$PLUGIN_TARBALL"
+          "$DSH" web --port 39103 > "$ISOLATED/dsh.log" 2>&1 &
+          DSH_PID=$!
+          trap 'kill "$DSH_PID" 2>/dev/null || true' EXIT
+          for attempt in $(seq 1 40); do curl --fail --silent http://127.0.0.1:39103/api/builtin-toggles/v1/inspection > "$ISOLATED/inspection.json" && break; sleep 1; done
+          test -s "$ISOLATED/inspection.json"
+          curl --fail --silent http://127.0.0.1:39103/api/builtin-toggles > "$ISOLATED/legacy.json"
+          curl --fail --silent -X POST -H 'content-type: application/json' --data '{"action":"force-disable"}' http://127.0.0.1:39103/api/builtin-toggles/ui-goal > "$ISOLATED/force-disable.json"
+          curl --fail --silent -X POST -H 'content-type: application/json' --data '{"action":"force-enable"}' http://127.0.0.1:39103/api/builtin-toggles/ui-goal > "$ISOLATED/force-enable.json"
+          curl --fail --silent -X POST -H 'content-type: application/json' --data '{"action":"restore-inheritance"}' http://127.0.0.1:39103/api/builtin-toggles/ui-goal > "$ISOLATED/restore.json"
+          kill "$DSH_PID"
+          wait "$DSH_PID" || true
+          "$DSH" web --port 39103 > "$ISOLATED/dsh-restart.log" 2>&1 &
+          DSH_PID=$!
+          for attempt in $(seq 1 40); do curl --fail --silent http://127.0.0.1:39103/api/builtin-toggles/v1/inspection > "$ISOLATED/restarted-inspection.json" && break; sleep 1; done
+          node --input-type=module --eval "const r=JSON.parse(await (await import('node:fs/promises')).readFile('$ISOLATED/restarted-inspection.json')); if(!r.capabilities?.some(x=>x.id==='ui-goal')) throw new Error('inspection lost ui-goal after restart')"
+      - name: Compatibility summary
+        run: |
+          {
+            echo '## Reviewed baseline lane'
+            echo ''
+            echo '- DSH: @deepseek-ai/dsh-base@0.1.0-rc.6 + @deepseek-ai/dsh-web-app@0.1.0-rc.6'
+            echo '- Plugin: local npm pack tarball'
+            echo '- Result: baseline roster, isolated install/load, legacy/v1 API, force/restore persistence and restart, observable drift fail-closed, and trust-fence tests passed.'
+            echo '- Browser smoke: not claimed here; it needs a stable public DSH browser harness.'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: reviewed-rc6-compatibility
+          path: .agent-tmp/compatibility/baseline.json
+
+  current-public-observation:
+    name: current public observation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22.19.0
+      - name: Resolve the current public DSH release without changing support claims
+        run: |
+          set -euo pipefail
+          VERSION="$(npm view @deepseek-ai/dsh version)"
+          printf '{"package":"@deepseek-ai/dsh","observedVersion":"%s","reviewStatus":"observational-only","supported":false}\n' "$VERSION" > compatibility-current-public.json
+          cat compatibility-current-public.json
+          echo '## Current public lane' >> "$GITHUB_STEP_SUMMARY"
+          echo "- Observed @deepseek-ai/dsh: \`$VERSION\`" >> "$GITHUB_STEP_SUMMARY"
+          echo '- This is early-warning only. It does not alter the reviewed baseline, allowlist, or supported-version claim.' >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: current-public-compatibility
+          path: compatibility-current-public.json

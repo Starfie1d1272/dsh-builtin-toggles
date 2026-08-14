@@ -31,16 +31,25 @@ file, duplicate target row or `disabled` field, and non-literal `disabled`),
 while the final writer still repeats its lock, atomic write, and optimistic
 concurrency checks at commit time.
 
+The GET route reads and `lstat`s the profile patch once, then derives all
+capability override/preflight values from that coherent text snapshot. Quoted
+or reordered ordinary top-level ids are recognized without rewriting their
+spelling. An id form the textual writer cannot safely explain, a symlink, or a
+non-regular patch path is unavailable/unwritable. GET is never a write cache:
+POST performs fresh preflight and repeats file type, identity, mode, read, and
+optimistic-concurrency checks under the official writer lock.
+
 Compatibility is `verified` only when a stable, Host-owned runtime release
 identity matches the reviewed rc.6 target **and** every evaluated structural
 assertion matches. Identity is necessary but not sufficient: it is combined
 with the roster, exact module identity, and reviewed `inject` checks.
-After identity matches, `drifted` applies when an expected entry is missing, a
-new official entry appears, a reviewed package identity changes, a reviewed
-`inject` declaration changes, or the runtime contains a duplicate Loader id.
-`unverified` applies when a reviewed expectation is incomplete or runtime
-release identity is unavailable/mismatched; structural findings are still
-reported in the latter case, but cannot elevate the summary to `drifted`.
+`drifted` applies when an expected entry is missing, a new official entry
+appears, a reviewed package identity or `inject` declaration changes, the
+runtime contains a duplicate Loader id, **or** a trustworthy runtime identity
+mismatches. `unverified` means no difference was observed but a reviewed
+expectation or runtime identity proof is incomplete. `verifiedCount`,
+`driftedCount`, and `unverifiedCount` count entry assertions only; composition
+identity is reported separately and never contributes a fictional entry.
 Loader `inject` string arrays are compared as unordered service sets, matching
 Cordis injection resolution.
 
@@ -105,4 +114,6 @@ Restore intentionally does not call `entry.update({ disabled: null })`: real
 Cordis Loader semantics only remove that entry's current option. The atomic
 profile change is instead reconciled through DSH's established profile/HMR
 watcher, which recomposes the complete patch layer and thereby re-exposes a
-lower inherited `disabled` value when present.
+lower inherited `disabled` value when present. A successful restore DTO only
+means the profile operation committed; it does not claim that an already-open
+runtime has synchronously converged. The client re-reads inspection afterward.

@@ -81,9 +81,9 @@ export function evaluateCompatibility(
     else entries.push(entry)
   }
   const findings: CompatibilityFinding[] = []
-  let structurallyVerifiedCount = 0
-  let driftedCount = 0
-  let unverifiedCount = 0
+  const directDriftIds = new Set<string>()
+  const structurallyMatchingReviewedIds = new Set<string>()
+  const incompleteReviewedIds = new Set<string>()
   const identityStatus: RuntimeIdentityStatus = runtimeIdentity === null
     ? 'unavailable'
     : runtimeIdentity.kind === expectedIdentity.kind && runtimeIdentity.value === expectedIdentity.value
@@ -92,10 +92,8 @@ export function evaluateCompatibility(
 
   if (identityStatus === 'unavailable') {
     findings.push({ scope: 'composition', code: 'runtime_release_identity_unavailable', expected: expectedIdentity, observed: null })
-    unverifiedCount += 1
   } else if (identityStatus === 'mismatched') {
     findings.push({ scope: 'composition', code: 'runtime_release_identity_mismatch', expected: expectedIdentity, observed: runtimeIdentity })
-    unverifiedCount += 1
   }
 
   const duplicateIds = new Set<string>()
@@ -103,35 +101,35 @@ export function evaluateCompatibility(
     if (entries.length < 2) continue
     duplicateIds.add(id)
     findings.push({ scope: 'entry', code: 'duplicate_runtime_id', id, observed: entries.map((entry) => entry.packageName) })
-    driftedCount += 1
+    directDriftIds.add(id)
   }
 
   for (const reviewed of baseline) {
     const entries = runtimeById.get(reviewed.id)
     if (entries === undefined) {
       findings.push({ scope: 'entry', code: 'missing_expected_entry', id: reviewed.id, expected: reviewed.expectedPackageName })
-      driftedCount += 1
+      directDriftIds.add(reviewed.id)
       continue
     }
     if (duplicateIds.has(reviewed.id)) continue
     const entry = entries[0]!
     if (reviewed.expectedPackageName === null) {
       findings.push({ scope: 'entry', code: 'baseline_package_unknown', id: reviewed.id, observed: entry.packageName })
-      unverifiedCount += 1
+      incompleteReviewedIds.add(reviewed.id)
       continue
     }
     if (entry.packageName !== reviewed.expectedPackageName) {
       findings.push({ scope: 'entry', code: 'package_identity_changed', id: reviewed.id, expected: reviewed.expectedPackageName, observed: entry.packageName })
-      driftedCount += 1
+      directDriftIds.add(reviewed.id)
       continue
     }
     const declaredInject = reviewed.serviceEvidence.find((evidence) => evidence.kind === 'declared-inject')
     if (declaredInject !== undefined && !sameInject(entry.declaredInject, entry.declaredInjectKnown !== false, declaredInject.expectedServices)) {
       findings.push({ scope: 'entry', code: 'declared_inject_changed', id: reviewed.id, expected: declaredInject.expectedServices, observed: entry.declaredInject })
-      driftedCount += 1
+      directDriftIds.add(reviewed.id)
       continue
     }
-    structurallyVerifiedCount += 1
+    structurallyMatchingReviewedIds.add(reviewed.id)
   }
 
   for (const [id, entries] of runtimeById) {
@@ -140,19 +138,28 @@ export function evaluateCompatibility(
     if (!entry.packageName.startsWith(OFFICIAL_PACKAGE_PREFIX)) continue
     if (expected.has(entry.id)) continue
     findings.push({ scope: 'entry', code: 'new_official_entry', id: entry.id, observed: entry.packageName })
-    driftedCount += 1
+    directDriftIds.add(entry.id)
   }
 
+  const identityBound = identityStatus === 'matched'
+  const unverifiedCount = incompleteReviewedIds.size
+    + (identityBound ? 0 : structurallyMatchingReviewedIds.size)
+
   return {
-    // Without a trustworthy release binding, a structural difference is still
-    // reported but cannot be attributed to a reviewed baseline as drift.
-    status: identityStatus !== 'matched' ? 'unverified' : driftedCount > 0 ? 'drifted' : unverifiedCount > 0 ? 'unverified' : 'verified',
+    // A direct structural difference and a trustworthy identity mismatch are
+    // both drift. Missing proof alone remains unverified.
+    status: identityStatus === 'mismatched' || directDriftIds.size > 0
+      ? 'drifted'
+      : unverifiedCount > 0
+        ? 'unverified'
+        : 'verified',
     runtimeIdentity: { expected: expectedIdentity, observed: runtimeIdentity, status: identityStatus },
     findings,
-    // A structurally matching row is not verified until the composition is
-    // also bound to the reviewed release identity.
-    verifiedCount: identityStatus === 'matched' ? structurallyVerifiedCount : 0,
-    driftedCount,
-    unverifiedCount: unverifiedCount + (identityStatus === 'matched' ? 0 : structurallyVerifiedCount),
+    // These are entry assertion counts only: a composition identity finding
+    // never contributes a synthetic extra row. Missing expected ids and new
+    // official ids each count once by id; duplicate runtime ids likewise.
+    verifiedCount: identityBound ? structurallyMatchingReviewedIds.size : 0,
+    driftedCount: directDriftIds.size,
+    unverifiedCount,
   }
 }

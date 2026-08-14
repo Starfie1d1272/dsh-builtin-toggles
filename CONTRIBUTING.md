@@ -30,6 +30,7 @@ pnpm install
 pnpm typecheck
 pnpm test
 pnpm build
+pnpm pack:check
 ```
 
 Before committing, run the checks relevant to your change, for example:
@@ -123,3 +124,12 @@ For user-visible changes:
 - explain the evidence behind any change to policy or runtime behavior.
 
 Small catalog/documentation fixes do not need unrelated architecture changes.
+
+## Reviewed compatibility maintenance
+
+The supported baseline is a reviewed published DSH artifact, not a version
+range. Follow [COMPATIBILITY.md](COMPATIBILITY.md): validate the roster,
+package identity and `inject` declarations mechanically, then perform an
+explicit architecture/security review for safe-leaf service and consumer
+claims. Current-public workflow observations never authorize an allowlist
+expansion or a new supported-version claim.

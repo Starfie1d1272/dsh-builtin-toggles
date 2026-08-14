@@ -45,8 +45,8 @@ general plugin manager.
 ## Layout
 
 - `src/policy.ts` — allowlist + classification + POST gate (pure).
-- `src/profile-patch.ts` — conservative textual patch writer (pure render +
-  atomic fs layer).
+- `src/profile-patch.ts` — conservative textual patch writer plus the single
+  coherent GET profile snapshot (pure render + atomic fs layer).
 - `src/mutate.ts` — POST orchestration with runtime-first order and rollback
   (pure, dependency-injected).
 - `src/index.ts` — host plugin: same-origin API routes, trust fence wiring,
@@ -84,3 +84,8 @@ general plugin manager.
   "refresh to apply" hint after a successful toggle.
 - No tools, no MCP, no model prompt injection, no third-party plugin
   management. Keep the scope exactly as small as the README describes.
+- The only reviewed upstream baseline is published DSH rc.6. Use
+  `pnpm verify:baseline` against the two downloaded patch artifacts before
+  changing evidence. It verifies roster/package/inject mechanics only;
+  safe-leaf provides/consumers remain a separate human review. A scheduled
+  public-version observation never upgrades compatibility or the allowlist.

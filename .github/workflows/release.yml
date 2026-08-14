@@ -22,15 +22,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@9fd676a19091d4595eefd76e4bd31c97133911f1
         with:
           version: 11.21.0
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: 24
           registry-url: https://registry.npmjs.org
@@ -39,8 +39,8 @@ jobs:
       # Trusted Publishing needs npm >= 11.5.1 (and `npm trust` >= 11.15.0);
       # make the runner's npm deterministic instead of relying on the Node
       # release's bundled version.
-      - name: Ensure npm >= 11.5.1
-        run: npm install -g npm@^11.5.1
+      - name: Pin npm for trusted publishing
+        run: npm install -g npm@11.5.1
 
       - name: Install
         run: pnpm install --frozen-lockfile
@@ -65,8 +65,8 @@ jobs:
           echo "package version: ${PKG_VERSION}"
           test "${TAG_VERSION}" = "${PKG_VERSION}"
 
-      - name: Pack dry-run
-        run: npm pack --dry-run
+      - name: Validate package tarball
+        run: pnpm pack:check
 
       # OIDC trusted publishing: npm exchanges the Actions id-token with the
       # registry automatically — no NODE_AUTH_TOKEN / NPM_TOKEN anywhere.

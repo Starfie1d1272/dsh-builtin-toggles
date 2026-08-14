@@ -65,6 +65,9 @@ describe('Capability Inspector client model', () => {
     assert.deepEqual(getCapabilityPresentation('zh', known), { title: '目标栏', summary: '在输入区显示当前 Goal，可编辑、暂停、恢复或清除；Goal 仍通过 /goal 创建。', unknown: false })
     assert.deepEqual(getCapabilityPresentation('en', known), { title: 'Goal bar', summary: 'Shows the current Goal near the composer and provides controls to edit, pause, resume, or clear it.', unknown: false })
     assert.deepEqual(getCapabilityPresentation('en', capability({ id: 'ui-goal', packageName: '@example/plugin', official: false })).unknown, true)
+    assert.deepEqual(getCapabilityPresentation('en', capability({ id: 'ui-commands', packageName: '@deepseek-ai/dsh-client-ui-commands' })), {
+      title: 'dsh-client-ui-commands', summary: 'No reviewed presentation description is available for this capability.', unknown: true,
+    })
   })
   it('has equivalent zh-CN/en inspector keys and diagnostics allowlist excludes sensitive local fields', () => {
     assert.deepEqual(Object.keys(en).sort(), Object.keys(zh).sort())
@@ -74,6 +77,24 @@ describe('Capability Inspector client model', () => {
     const report = buildDiagnostics(snapshot([capability({ packageName: '@deepseek-ai/dsh-client-ui-goal' })]))
     assert.match(report, /schemaVersion/)
     assert.doesNotMatch(report, /(DSH_HOME|\/Users\/|token|hostname|profile content)/i)
+  })
+
+  it('redacts external Loader identifiers and local package spellings from copied diagnostics', () => {
+    const external = capability({
+      id: 'file:///Users/alice/.dsh/private-plugin?token=secret',
+      packageName: 'C:\\Users\\alice\\private-plugin',
+      official: false,
+      baseline: { ...capability().baseline, reviewed: false, expectedPackageName: null },
+    })
+    const inspected = snapshot([capability(), external])
+    inspected.compatibility = { ...inspected.compatibility, findings: [...inspected.compatibility.findings, {
+      scope: 'entry', code: 'duplicate_runtime_id', id: external.id,
+    }] }
+    const report = buildDiagnostics(inspected)
+    assert.match(report, /ui-goal/)
+    assert.match(report, /external-or-unreviewed/)
+    assert.match(report, /redacted/)
+    assert.doesNotMatch(report, /alice|private-plugin|file:\/\/|C:\\Users|secret/i)
   })
   it('resolves a capability deep link to the matching rendered row', () => {
     assert.equal(deepLinkIndex([capability(), capability({ id: 'ui-jobs' })], 'ui-jobs'), 1)

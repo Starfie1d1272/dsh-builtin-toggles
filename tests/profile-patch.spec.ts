@@ -5,7 +5,7 @@
  */
 
 import assert from 'node:assert/strict'
-import { mkdtempSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync, readdirSync, statSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, it } from 'node:test'
@@ -13,6 +13,7 @@ import {
   applyDisabledOverride,
   ConcurrentEditError,
   inspectProfileOverride,
+  inspectProfileSnapshot,
   PatchError,
   preflightProfileMutation,
   renderRestoreInheritance,
@@ -130,6 +131,20 @@ describe('renderDisabledPatch', () => {
     const result = renderDisabledPatch(input, 'ui-goal', true)
     // the appended override row is exactly `- id: ui-goal` + `  disabled: true`, no name
     assert.equal(result.content, `${input}- id: ui-goal\n  disabled: true\n`)
+  })
+
+  it('recognizes quoted ids and ids placed after another direct row field without rewriting either spelling', () => {
+    const quoted = renderDisabledPatch('- id: "ui-goal" # keep spelling\n  disabled: false\n', 'ui-goal', true)
+    assert.equal(quoted.content, '- id: "ui-goal" # keep spelling\n  disabled: true\n')
+    const reordered = renderDisabledPatch('- name: @deepseek-ai/dsh-client-ui-goal\n  id: \'ui-goal\'\n', 'ui-goal', true)
+    assert.equal(reordered.createdRow, false)
+    assert.equal(reordered.content, '- name: @deepseek-ai/dsh-client-ui-goal\n  id: \'ui-goal\'\n  disabled: true\n')
+  })
+
+  it('refuses an ambiguous top-level id instead of appending a potentially duplicate override', () => {
+    const content = '- name: something\n  id: !!js targetId\n'
+    assert.throws(() => renderDisabledPatch(content, 'ui-goal', true), PatchError)
+    assert.deepEqual(inspectProfileOverride(content, 'ui-goal'), { state: 'unavailable', reason: 'ambiguous_top_level_id' })
   })
 })
 
@@ -265,6 +280,26 @@ describe('applyDisabledOverride (official lock + atomic write)', () => {
     assert.deepEqual(preflightProfileMutation(nonLiteral, 'ui-goal'), {
       status: 'unwritable', reason: 'non_literal_disabled',
     })
+
+    const ambiguous = tempFile('- name: something\n  id: !!js targetId\n')
+    assert.deepEqual(preflightProfileMutation(ambiguous, 'ui-goal'), {
+      status: 'unwritable', reason: 'ambiguous_top_level_id',
+    })
+  })
+
+  it('reads one regular profile snapshot coherently and rejects symlink or directory targets', async () => {
+    const file = tempFile('- id: ui-goal\n  disabled: true\n')
+    const snapshot = inspectProfileSnapshot(file, ['ui-goal', 'ui-jobs'])
+    assert.deepEqual(snapshot.profileOverrides.get('ui-goal'), { state: 'explicitly-disabled' })
+    assert.deepEqual(snapshot.profileOverrides.get('ui-jobs'), { state: 'inherited' })
+    assert.deepEqual(snapshot.profilePersistence.get('ui-goal'), { status: 'writable' })
+
+    const dir = mkdtempSync(join(tmpdir(), 'builtin-toggles-link-'))
+    const link = join(dir, 'cordis.patch.yml')
+    symlinkSync(file, link)
+    assert.deepEqual(preflightProfileMutation(link, 'ui-goal'), { status: 'unwritable', reason: 'profile_patch_unreadable' })
+    await assert.rejects(() => applyDisabledOverride(link, 'ui-goal', true), PatchError)
+    assert.deepEqual(preflightProfileMutation(dir, 'ui-goal'), { status: 'unwritable', reason: 'profile_patch_unreadable' })
   })
 
   it('restore uses the same lock, optimistic concurrency refusal and atomic writer', async () => {

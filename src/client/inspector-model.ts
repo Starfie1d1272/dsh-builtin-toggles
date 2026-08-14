@@ -95,6 +95,16 @@ export function filterCapabilities(snapshot: InspectionSnapshot, filters: Inspec
 /** A deliberately allowlisted, local-path-free diagnostic report. */
 export function buildDiagnostics(snapshot: InspectionSnapshot): string {
   const compatibility = snapshot.compatibility
+  const publicReviewedIds = new Set(snapshot.capabilities
+    .filter((capability) => capability.official && capability.baseline.reviewed && capability.baseline.expectedPackageName === capability.packageName)
+    .map((capability) => capability.id))
+  const publicCapability = (capability: Capability): boolean => publicReviewedIds.has(capability.id)
+  const diagnosticFinding = (finding: CompatibilityFinding): string => {
+    // `id` originates in the external Loader. It is only safe to copy where
+    // this inspection independently recognizes the exact reviewed built-in.
+    const id = finding.id !== undefined && publicReviewedIds.has(finding.id) ? ` (${finding.id})` : finding.id === undefined ? '' : ' (redacted)'
+    return `- ${finding.scope}:${finding.code}${id}`
+  }
   const lines = [
     'dsh-builtin-toggles capability inspector',
     `schemaVersion: ${snapshot.schemaVersion}`,
@@ -102,11 +112,11 @@ export function buildDiagnostics(snapshot: InspectionSnapshot): string {
     `runtimeIdentity: ${compatibility.runtimeIdentity.status}`,
     `inventory: total=${snapshot.inventory.totalEntries}, official=${snapshot.inventory.officialEntries}, external=${snapshot.inventory.externalEntries}, reviewed=${snapshot.inventory.reviewedEntries}`,
     'findings:',
-    ...compatibility.findings.map((finding) => `- ${finding.scope}:${finding.code}${finding.id === undefined ? '' : ` (${finding.id})`}`),
+    ...compatibility.findings.map(diagnosticFinding),
     'capabilities:',
     ...snapshot.capabilities.map((capability) => [
-      `- id=${capability.id}`,
-      `package=${capability.packageName}`,
+      `- capability=${publicCapability(capability) ? capability.id : 'external-or-unreviewed'}`,
+      `package=${publicCapability(capability) ? capability.packageName : 'redacted'}`,
       `verification=${capability.verification}`,
       `policy=${capability.policy.status}`,
       `eligibility=${capability.mutationEligibility.status}`,
