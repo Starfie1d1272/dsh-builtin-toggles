@@ -51,7 +51,7 @@
 dsh plugin --profile web add "/绝对/路径/dsh-builtin-toggles"
 ```
 
-**从 npm 安装（发布 v0.1.0 后可用）：**
+**从 npm 安装：**
 
 ```sh
 dsh plugin --profile web add dsh-builtin-toggles
