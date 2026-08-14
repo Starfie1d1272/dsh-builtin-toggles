@@ -201,7 +201,11 @@ export function apply(ctx: Context): void {
           const entries = [...ctx.loader.entries()]
             .filter((entry) => !entry.options.group)
             .map(inspectionEntry)
-          sendJson(res, 200, buildInspectionResponse(entries))
+          // DSH's public Loader inventory and webRuntime seams expose no
+          // Host release identity. Do not infer one from module resolution,
+          // process paths, or private Loader fields: no identity means the
+          // read-only API must remain unverified.
+          sendJson(res, 200, buildInspectionResponse(entries, null))
           return
         }
 

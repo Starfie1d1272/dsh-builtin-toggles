@@ -33,6 +33,21 @@ export interface ReviewedReference {
   artifact: string
 }
 
+/** Reviewed release target. Runtime evidence must come from a Host-owned stable seam. */
+export interface ReviewedCompositionIdentity {
+  kind: 'dsh-release'
+  value: string
+  provenance: 'npm-published-package'
+}
+
+/**
+ * The release whose published patches supplied this baseline. This is an
+ * expected identity, not proof that the currently running Host exposes it.
+ */
+export const REVIEWED_RC6_COMPOSITION_IDENTITY: ReviewedCompositionIdentity = {
+  kind: 'dsh-release', value: '@deepseek-ai/dsh@0.1.0-rc.6', provenance: 'npm-published-package',
+}
+
 export interface ReviewedCapabilityBaseline {
   id: string
   /** Exact module identity from the reviewed published rc.6 patch composition. */

@@ -1,11 +1,13 @@
 import {
   baselineById,
+  REVIEWED_RC6_COMPOSITION_IDENTITY,
+  type ReviewedCompositionIdentity,
   type ReviewedCapabilityBaseline,
 } from './evidence.ts'
 import { OFFICIAL_PACKAGE_PREFIX } from './policy.ts'
 
 export type VerificationStatus = 'verified' | 'drifted' | 'unverified'
-export type CompatibilityFindingCode = 'missing_expected_entry' | 'new_official_entry' | 'package_identity_changed' | 'declared_inject_changed' | 'baseline_package_unknown' | 'duplicate_runtime_id'
+export type CompatibilityFindingCode = 'missing_expected_entry' | 'new_official_entry' | 'package_identity_changed' | 'declared_inject_changed' | 'baseline_package_unknown' | 'duplicate_runtime_id' | 'runtime_release_identity_unavailable' | 'runtime_release_identity_mismatch'
 
 export interface RuntimeEntryEvidence {
   id: string
@@ -13,15 +15,30 @@ export interface RuntimeEntryEvidence {
   declaredInject: readonly string[] | null
 }
 
+/** Evidence supplied by a stable, Host-owned runtime identity seam. */
+export interface RuntimeCompositionIdentity {
+  kind: 'dsh-release'
+  value: string
+  source: 'host-runtime-metadata' | 'immutable-fingerprint'
+}
+
+export type RuntimeIdentityStatus = 'matched' | 'mismatched' | 'unavailable'
+
 export interface CompatibilityFinding {
+  scope: 'composition' | 'entry'
   code: CompatibilityFindingCode
-  id: string
-  expected?: string | readonly string[] | null
-  observed?: string | readonly string[] | null
+  id?: string
+  expected?: string | readonly string[] | ReviewedCompositionIdentity | null
+  observed?: string | readonly string[] | RuntimeCompositionIdentity | null
 }
 
 export interface CompatibilityEvaluation {
   status: VerificationStatus
+  runtimeIdentity: {
+    expected: ReviewedCompositionIdentity
+    observed: RuntimeCompositionIdentity | null
+    status: RuntimeIdentityStatus
+  }
   findings: readonly CompatibilityFinding[]
   verifiedCount: number
   driftedCount: number
@@ -50,6 +67,8 @@ function sameInject(left: readonly string[] | null, right: readonly string[]): b
 export function evaluateCompatibility(
   runtimeEntries: readonly RuntimeEntryEvidence[],
   baseline: readonly ReviewedCapabilityBaseline[],
+  runtimeIdentity: RuntimeCompositionIdentity | null = null,
+  expectedIdentity: ReviewedCompositionIdentity = REVIEWED_RC6_COMPOSITION_IDENTITY,
 ): CompatibilityEvaluation {
   const expected = baselineById(baseline)
   const runtimeById = new Map<string, RuntimeEntryEvidence[]>()
@@ -59,44 +78,57 @@ export function evaluateCompatibility(
     else entries.push(entry)
   }
   const findings: CompatibilityFinding[] = []
-  let verifiedCount = 0
+  let structurallyVerifiedCount = 0
   let driftedCount = 0
   let unverifiedCount = 0
+  const identityStatus: RuntimeIdentityStatus = runtimeIdentity === null
+    ? 'unavailable'
+    : runtimeIdentity.kind === expectedIdentity.kind && runtimeIdentity.value === expectedIdentity.value
+      ? 'matched'
+      : 'mismatched'
+
+  if (identityStatus === 'unavailable') {
+    findings.push({ scope: 'composition', code: 'runtime_release_identity_unavailable', expected: expectedIdentity, observed: null })
+    unverifiedCount += 1
+  } else if (identityStatus === 'mismatched') {
+    findings.push({ scope: 'composition', code: 'runtime_release_identity_mismatch', expected: expectedIdentity, observed: runtimeIdentity })
+    unverifiedCount += 1
+  }
 
   const duplicateIds = new Set<string>()
   for (const [id, entries] of runtimeById) {
     if (entries.length < 2) continue
     duplicateIds.add(id)
-    findings.push({ code: 'duplicate_runtime_id', id, observed: entries.map((entry) => entry.packageName) })
+    findings.push({ scope: 'entry', code: 'duplicate_runtime_id', id, observed: entries.map((entry) => entry.packageName) })
     driftedCount += 1
   }
 
   for (const reviewed of baseline) {
     const entries = runtimeById.get(reviewed.id)
     if (entries === undefined) {
-      findings.push({ code: 'missing_expected_entry', id: reviewed.id, expected: reviewed.expectedPackageName })
+      findings.push({ scope: 'entry', code: 'missing_expected_entry', id: reviewed.id, expected: reviewed.expectedPackageName })
       driftedCount += 1
       continue
     }
     if (duplicateIds.has(reviewed.id)) continue
     const entry = entries[0]!
     if (reviewed.expectedPackageName === null) {
-      findings.push({ code: 'baseline_package_unknown', id: reviewed.id, observed: entry.packageName })
+      findings.push({ scope: 'entry', code: 'baseline_package_unknown', id: reviewed.id, observed: entry.packageName })
       unverifiedCount += 1
       continue
     }
     if (entry.packageName !== reviewed.expectedPackageName) {
-      findings.push({ code: 'package_identity_changed', id: reviewed.id, expected: reviewed.expectedPackageName, observed: entry.packageName })
+      findings.push({ scope: 'entry', code: 'package_identity_changed', id: reviewed.id, expected: reviewed.expectedPackageName, observed: entry.packageName })
       driftedCount += 1
       continue
     }
     const declaredInject = reviewed.serviceEvidence.find((evidence) => evidence.kind === 'declared-inject')
     if (declaredInject !== undefined && !sameInject(entry.declaredInject, declaredInject.expectedServices)) {
-      findings.push({ code: 'declared_inject_changed', id: reviewed.id, expected: declaredInject.expectedServices, observed: entry.declaredInject })
+      findings.push({ scope: 'entry', code: 'declared_inject_changed', id: reviewed.id, expected: declaredInject.expectedServices, observed: entry.declaredInject })
       driftedCount += 1
       continue
     }
-    verifiedCount += 1
+    structurallyVerifiedCount += 1
   }
 
   for (const [id, entries] of runtimeById) {
@@ -104,15 +136,20 @@ export function evaluateCompatibility(
     const entry = entries[0]!
     if (!entry.packageName.startsWith(OFFICIAL_PACKAGE_PREFIX)) continue
     if (expected.has(entry.id)) continue
-    findings.push({ code: 'new_official_entry', id: entry.id, observed: entry.packageName })
+    findings.push({ scope: 'entry', code: 'new_official_entry', id: entry.id, observed: entry.packageName })
     driftedCount += 1
   }
 
   return {
-    status: driftedCount > 0 ? 'drifted' : unverifiedCount > 0 ? 'unverified' : 'verified',
+    // Without a trustworthy release binding, a structural difference is still
+    // reported but cannot be attributed to a reviewed baseline as drift.
+    status: identityStatus !== 'matched' ? 'unverified' : driftedCount > 0 ? 'drifted' : unverifiedCount > 0 ? 'unverified' : 'verified',
+    runtimeIdentity: { expected: expectedIdentity, observed: runtimeIdentity, status: identityStatus },
     findings,
-    verifiedCount,
+    // A structurally matching row is not verified until the composition is
+    // also bound to the reviewed release identity.
+    verifiedCount: identityStatus === 'matched' ? structurallyVerifiedCount : 0,
     driftedCount,
-    unverifiedCount,
+    unverifiedCount: unverifiedCount + (identityStatus === 'matched' ? 0 : structurallyVerifiedCount),
   }
 }

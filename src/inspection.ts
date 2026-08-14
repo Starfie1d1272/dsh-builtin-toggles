@@ -1,6 +1,7 @@
 import {
   evaluateCompatibility,
   type CompatibilityEvaluation,
+  type RuntimeCompositionIdentity,
   type RuntimeEntryEvidence,
   type VerificationStatus,
 } from './compatibility.ts'
@@ -61,18 +62,23 @@ function lifecycleFor(phase: string | null): RuntimeLifecycle {
 }
 
 /** Build the versioned, presentation-free inspection DTO. */
-export function buildInspectionResponse(entries: readonly InspectionRuntimeEntry[]): InspectionResponseV1 {
+export function buildInspectionResponse(
+  entries: readonly InspectionRuntimeEntry[],
+  runtimeIdentity: RuntimeCompositionIdentity | null = null,
+): InspectionResponseV1 {
   const baseline = baselineById()
   const runtimeEvidence: RuntimeEntryEvidence[] = entries.map((entry) => ({
     id: entry.id,
     packageName: entry.name,
     declaredInject: entry.declaredInject,
   }))
-  const compatibility = evaluateCompatibility(runtimeEvidence, REVIEWED_DSH_WEB_BASELINE)
+  const compatibility = evaluateCompatibility(runtimeEvidence, REVIEWED_DSH_WEB_BASELINE, runtimeIdentity)
   const findingCodesById = new Map<string, VerificationStatus>()
   for (const finding of compatibility.findings) {
+    if (finding.scope !== 'entry' || finding.id === undefined) continue
     findingCodesById.set(finding.id, finding.code === 'baseline_package_unknown' || finding.code === 'new_official_entry' ? 'unverified' : 'drifted')
   }
+  const identityVerified = compatibility.runtimeIdentity.status === 'matched'
   const capabilities = entries.map((entry): InspectedCapability => {
     const reviewed = baseline.get(entry.id)
     const policy = classifyEntry(entry)
@@ -84,7 +90,7 @@ export function buildInspectionResponse(entries: readonly InspectionRuntimeEntry
       managementPlane: reviewed?.managementPlane ?? unknownPlane(),
       category: reviewed?.category ?? unknownCategory(),
       policy: policy.manageable ? { status: 'manageable' } : { status: 'locked', reason: policy.reason },
-      verification: findingCodesById.get(entry.id) ?? (reviewed === undefined ? 'unverified' : 'verified'),
+      verification: findingCodesById.get(entry.id) ?? (reviewed === undefined || !identityVerified ? 'unverified' : 'verified'),
       baseline: {
         reviewed: reviewed !== undefined,
         expectedPackageName: reviewed?.expectedPackageName ?? null,
