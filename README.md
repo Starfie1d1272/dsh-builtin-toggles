@@ -4,6 +4,8 @@ DeepSeek Harness Web 的官方内置插件目录与安全开关。
 
 > 非官方社区插件（unofficial community plugin）。与 DeepSeek Harness 官方无关，不受官方支持。
 
+[![Awesome DSH Plugin](https://awesome-dsh-plugin.com/badge.svg)](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin)
+
 ![dsh-builtin-toggles 内置插件目录](docs/assets/builtin-catalog-zh.png)
 
 DSH Web 由大量官方内置插件（built-in entries）组成，但原始的 Loader id / package 名很难让普通用户判断每个插件是干什么的、当前是什么状态、为什么有些能关、有些不能。本插件在 **设置 → 插件 → 内置插件** 提供一个面向中文用户的内置插件目录与安全开关。
@@ -54,6 +56,10 @@ pnpm typecheck
 pnpm test
 pnpm build     # tsdown → lib/index.js (node ESM) + lib/client.js (browser bundle)
 ```
+
+## 贡献
+
+欢迎 Issue 和 PR。贡献前请阅读 [贡献指南](CONTRIBUTING.zh-CN.md)（[English](CONTRIBUTING.md)）。
 
 ## License
 
