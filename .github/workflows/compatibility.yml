@@ -82,7 +82,7 @@ jobs:
           NODE
           }
           start_dsh() {
-            "$DSH" web --port 39103 > "$ISOLATED/dsh.log" 2>&1 &
+            NODE_OPTIONS=--random-seed=8128 "$DSH" web --port 39103 > "$ISOLATED/dsh.log" 2>&1 &
             DSH_PID=$!
             wait_for_inspection "$ISOLATED/inspection.json"
           }
