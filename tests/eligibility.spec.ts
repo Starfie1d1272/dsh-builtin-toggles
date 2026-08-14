@@ -52,8 +52,8 @@ describe('per-entry mutation eligibility', () => {
     assert.ok(result.reasons.includes('reviewed_safe_leaf_evidence_missing'))
   })
 
-  it('fails closed on a newly discovered official entry because the public seam has no consumer graph', () => {
-    const result = evaluateMutationEligibility('ui-goal', [runtime(), runtime({ id: 'ui-future', packageName: '@deepseek-ai/dsh-client-ui-future' })], baseline)
+  it('fails closed on a newly discovered official entry, including a known augmentation package under a new id', () => {
+    const result = evaluateMutationEligibility('ui-goal', [runtime(), runtime({ id: 'ui-future', packageName: '@deepseek-ai/dsh-host-directory-picker-browse' })], baseline)
     assert.equal(result.status, 'ineligible')
     assert.ok(result.reasons.includes('global_structural_drift'))
     assert.ok(result.limitations.includes('consumer_graph_not_exposed'))

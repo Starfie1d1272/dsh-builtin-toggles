@@ -57,11 +57,12 @@ capability `drifted`.
 Loader `inject` string arrays are compared as unordered service sets, matching
 Cordis injection resolution.
 
-The rc.6 DSH bootstrap also creates a small, exact set of platform helpers
-(HMR plus native and browse directory-picker adapters) after composing the two published
-patches. They remain unlisted and locked. Their opaque generated runtime ids
-are not treated as new patch-composition rows; any other new official runtime
-entry still produces structural drift.
+The reviewed rc.6 real-DSH run recorded two runtime augmentation evidence pairs:
+`4fbbeb63` / `@deepseek-ai/dsh-host-directory-picker-browse` and `e86f32a6` /
+`@deepseek-ai/dsh-client-ui-directory-picker-browse`. They are not published
+patch-baseline rows, remain unlisted and locked, and are ignored only when both
+the id and package match. Any new id, package change, or duplicate still
+produces structural drift.
 
 The current public DSH seams available to this plugin do not expose a Host
 release identity: `pluginInventory` is deliberately only a Loader-entry

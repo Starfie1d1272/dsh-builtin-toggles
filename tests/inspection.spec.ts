@@ -96,16 +96,27 @@ describe('compatibility evaluation', () => {
     assert.deepEqual(result.findings[0], { scope: 'entry', code: 'new_official_entry', id: 'ui-future', observed: '@deepseek-ai/dsh-client-ui-future' })
   })
 
-  it('does not mistake reviewed rc.6 bootstrap helpers for additions to the published patch composition', () => {
+  it('accepts only exact reviewed rc.6 runtime augmentation evidence pairs', () => {
     const result = evaluateCompatibility([
       runtime(),
-      runtime({ id: 'runtime-hmr', packageName: '@deepseek-ai/cordis-plugin-hmr' }),
-      runtime({ id: 'platform-picker', packageName: '@deepseek-ai/dsh-host-directory-picker-native' }),
-      runtime({ id: 'browse-picker-host', packageName: '@deepseek-ai/dsh-host-directory-picker-browse' }),
-      runtime({ id: 'browse-picker-client', packageName: '@deepseek-ai/dsh-client-ui-directory-picker-browse' }),
+      runtime({ id: '4fbbeb63', packageName: '@deepseek-ai/dsh-host-directory-picker-browse' }),
+      runtime({ id: 'e86f32a6', packageName: '@deepseek-ai/dsh-client-ui-directory-picker-browse' }),
     ], oneBaseline, reviewedRc6Identity)
     assert.equal(result.status, 'verified')
     assert.deepEqual(result.findings, [])
+  })
+
+  it('treats an augmentation package with a new id, changed package, or duplicate id as drift', () => {
+    const cases = [
+      [runtime(), runtime({ id: 'new-browse-id', packageName: '@deepseek-ai/dsh-host-directory-picker-browse' })],
+      [runtime(), runtime({ id: '4fbbeb63', packageName: '@deepseek-ai/dsh-host-directory-picker-future' })],
+      [runtime(), runtime({ id: '4fbbeb63', packageName: '@deepseek-ai/dsh-host-directory-picker-browse' }), runtime({ id: '4fbbeb63', packageName: '@deepseek-ai/dsh-host-directory-picker-browse' })],
+    ]
+    for (const entries of cases) {
+      const result = evaluateCompatibility(entries, oneBaseline, reviewedRc6Identity)
+      assert.equal(result.status, 'drifted')
+      assert.ok(result.findings.some((finding) => finding.code === 'new_official_entry' || finding.code === 'duplicate_runtime_id'))
+    }
   })
 
   it('detects an expected entry missing', () => {

@@ -115,10 +115,9 @@ describe('renderDisabledPatch', () => {
     assert.equal(result.content, '- id: ui-jobs\r\n  disabled: true\r\n- id: ui-goal\r\n  disabled: true\r\n')
   })
 
-  it('existing row with 4-space children indentation is respected', () => {
+  it('fails closed for a non-canonical direct-field indentation rather than guessing from a descendant', () => {
     const input = '- id: ui-goal\n    disabled: false\n'
-    const result = renderDisabledPatch(input, 'ui-goal', true)
-    assert.equal(result.content, '- id: ui-goal\n    disabled: true\n')
+    assert.throws(() => renderDisabledPatch(input, 'ui-goal', true), PatchError)
   })
 
   it('empty file → minimal override with trailing newline', () => {
@@ -139,6 +138,22 @@ describe('renderDisabledPatch', () => {
     const reordered = renderDisabledPatch('- name: @deepseek-ai/dsh-client-ui-goal\n  id: \'ui-goal\'\n', 'ui-goal', true)
     assert.equal(reordered.createdRow, false)
     assert.equal(reordered.content, '- name: @deepseek-ai/dsh-client-ui-goal\n  id: \'ui-goal\'\n  disabled: true\n')
+  })
+
+  it('never treats ids or disabled fields inside a nested mapping as row-owned fields', () => {
+    const input = '- id: ui-goal\n  config:\n    id: ui-goal\n    disabled: true\n'
+    const result = renderDisabledPatch(input, 'ui-goal', false)
+    assert.equal(result.createdRow, false)
+    assert.equal(result.content, `${input}  disabled: false\n`)
+    assert.equal(inspectProfileOverride(result.content, 'ui-goal').state, 'explicitly-enabled')
+  })
+
+  it('fails closed rather than append into an opaque config/name/other nested mapping row', () => {
+    for (const key of ['config', 'name', 'metadata']) {
+      const input = `- ${key}:\n    id: ui-goal\n    disabled: true\n`
+      assert.throws(() => renderDisabledPatch(input, 'ui-goal', false), PatchError)
+      assert.deepEqual(inspectProfileOverride(input, 'ui-goal'), { state: 'unavailable', reason: 'ambiguous_top_level_id' })
+    }
   })
 
   it('refuses an ambiguous top-level id instead of appending a potentially duplicate override', () => {

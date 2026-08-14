@@ -22,19 +22,16 @@ export interface RuntimeEntryEvidence {
  * composition has loaded. They are not rows in either published patch, so
  * treating their opaque runtime ids as composition additions would make the
  * reviewed Host permanently un-mutable. They remain unlisted and locked; this
- * exception only prevents their exact reviewed packages from fabricating a
+ * evidence only prevents their exact reviewed runtime pairs from fabricating a
  * roster drift finding.
  */
-const REVIEWED_RC6_BOOTSTRAP_AUGMENTATION_PACKAGES = new Set([
-  '@deepseek-ai/cordis-plugin-hmr',
-  '@deepseek-ai/dsh-host-directory-picker-native',
-  '@deepseek-ai/dsh-client-ui-directory-picker-native',
-  '@deepseek-ai/dsh-host-directory-picker-browse',
-  '@deepseek-ai/dsh-client-ui-directory-picker-browse',
+const REVIEWED_RC6_RUNTIME_AUGMENTATION_PAIRS = new Map([
+  ['4fbbeb63', '@deepseek-ai/dsh-host-directory-picker-browse'],
+  ['e86f32a6', '@deepseek-ai/dsh-client-ui-directory-picker-browse'],
 ])
 
 function isReviewedBootstrapAugmentation(entry: RuntimeEntryEvidence): boolean {
-  return REVIEWED_RC6_BOOTSTRAP_AUGMENTATION_PACKAGES.has(entry.packageName)
+  return REVIEWED_RC6_RUNTIME_AUGMENTATION_PAIRS.get(entry.id) === entry.packageName
 }
 
 /** Evidence supplied by a stable, Host-owned runtime identity seam. */

@@ -151,24 +151,40 @@ interface TargetRow {
 interface RowShape {
   start: number
   end: number
-  childIndent: number
+  /** Proven direct-field indentation; never inferred from an arbitrary descendant. */
+  directIndent: number | null
   /** False only for an ordinary block-mapping list item we can bound safely. */
   transparent: boolean
   idFields: readonly { index: number; scalar: ParsedScalar }[]
+}
+
+function inlineMappingValue(line: string): string | null {
+  const match = /^-\s+[^\s:#][^:]*:\s*(.*)$/.exec(line)
+  return match === null ? null : match[1]!
+}
+
+function inlineMappingKey(line: string): string | null {
+  const match = /^-\s+([^\s:#][^:]*):\s*/.exec(line)
+  return match === null ? null : match[1]!
+}
+
+function isScalarAnchor(raw: string): boolean {
+  if (parseSafeScalar(raw).status === 'known') return true
+  // `name: @deepseek-ai/...` is an existing safe reordered-row spelling. It
+  // is not an id scalar, but it is still a non-block value and therefore
+  // proves a following mapping field cannot be its descendant.
+  return /^(?![!&*|>{[\]])[^\s:#][^\s#]*(?:\s+#.*)?$/.test(raw.trim())
+}
+
+function mappingValueAtIndent(line: string, indent: number): string | null {
+  const match = new RegExp(`^${' '.repeat(indent)}[^\\s:#][^:]*:\\s*(.*)$`).exec(line)
+  return match === null ? null : match[1]!
 }
 
 function rowShape(lines: readonly string[], start: number): RowShape {
   let end = lines.length
   for (let i = start + 1; i < lines.length; i += 1) {
     if (isTopLevelItem(lines[i]!) || isTopLevelContent(lines[i]!)) { end = i; break }
-  }
-  let childIndent = 2
-  for (let i = start + 1; i < end; i += 1) {
-    const line = lines[i]!
-    const trimmed = line.trimStart()
-    if (trimmed.length === 0 || trimmed.startsWith('#')) continue
-    childIndent = line.length - trimmed.length
-    break
   }
   // A flow collection, tag, anchor, alias, scalar, or any other unfamiliar
   // top-level item can legally contain an id that this line scanner cannot
@@ -179,11 +195,55 @@ function rowShape(lines: readonly string[], start: number): RowShape {
   const idFields: { index: number; scalar: ParsedScalar }[] = []
   const inline = propertyValue(lines[start]!, 0, true, 'id')
   if (inline !== null) idFields.push({ index: start, scalar: parseSafeScalar(inline) })
+
+  // The old scanner took the first descendant's indentation as the row's
+  // direct field level. That turns `config: { id: … }`-style block children
+  // into row fields. Only an inline scalar establishes the fixed canonical
+  // direct-sibling column; otherwise the row is deliberately opaque.
+  // `insert:` is the one established nested-list form: its nested `- id`
+  // rows are skipped, while a possible direct mapping field still makes the
+  // row ambiguous rather than guessed.
+  const inlineValue = inlineMappingValue(lines[start]!)
+  const scalarAnchor = inlineValue !== null && isScalarAnchor(inlineValue)
+  const inlineKey = inlineMappingKey(lines[start]!)
+  // A top-level `- key: scalar` starts its mapping key at column two, which
+  // is the only direct-sibling indentation this textual grammar accepts. We
+  // never derive that level from a descendant line.
+  const directIndent = scalarAnchor ? 2 : null
+  let safeNestedInsert = inlineKey === 'insert' && inlineValue !== null && inlineValue.trim() === ''
+  let opaqueDescendant = false
+  let nestedMappingOpen = false
+
   for (let i = start + 1; i < end; i += 1) {
-    const value = propertyValue(lines[i]!, childIndent, false, 'id')
+    const line = lines[i]!
+    const trimmed = line.trimStart()
+    if (trimmed.length === 0 || trimmed.startsWith('#')) continue
+    const indent = line.length - trimmed.length
+
+    if (directIndent === null) {
+      if (safeNestedInsert && indent > 2 && trimmed.startsWith('-')) {
+        continue
+      } else if (safeNestedInsert && indent > 2) {
+        continue
+      } else {
+        opaqueDescendant = true
+        continue
+      }
+    }
+
+    if (indent > directIndent) {
+      if (!nestedMappingOpen) opaqueDescendant = true
+      continue
+    }
+    if (indent < directIndent || trimmed.startsWith('-')) {
+      opaqueDescendant = true
+      continue
+    }
+    nestedMappingOpen = mappingValueAtIndent(line, directIndent)?.trim() === ''
+    const value = propertyValue(line, directIndent, false, 'id')
     if (value !== null) idFields.push({ index: i, scalar: parseSafeScalar(value) })
   }
-  return { start, end, childIndent, transparent, idFields }
+  return { start, end, directIndent, transparent: transparent && !opaqueDescendant, idFields }
 }
 
 /** Locate one exact top-level override row without ever traversing `insert:`. */
@@ -208,15 +268,16 @@ function locateTargetRow(lines: readonly string[], id: string): TargetRow | null
   }
   const target = uniqueMatches[0]
   if (target === undefined) return null
-  const { start, end, childIndent } = target
-  const indent = ' '.repeat(childIndent)
+  const { start, end, directIndent } = target
+  const indent = ' '.repeat(directIndent ?? 2)
   const rowInlineComment = /^-\s+(?:id|'id'|"id"):\s*(?:\S+|'(?:''|[^'])*'|"(?:[^"\\]|\\.)*")(\s+#.*)?\s*$/.exec(lines[start]!)?.[1] ?? ''
   let disabledIndex = -1
   let disabledValue: boolean | null = null
   let disabledSuffix = ''
   for (let i = start + 1; i < end; i += 1) {
     const line = lines[i]!
-    const rawValue = propertyValue(line, childIndent, false, 'disabled')
+    if (directIndent === null) continue
+    const rawValue = propertyValue(line, directIndent, false, 'disabled')
     if (rawValue === null) continue
     if (disabledIndex !== -1) throw new PatchError(`builtin-toggles: duplicate disabled fields for ${id}; refusing to guess`)
     disabledIndex = i
