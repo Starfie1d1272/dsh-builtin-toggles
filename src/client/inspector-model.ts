@@ -62,21 +62,27 @@ export interface InspectorFilters {
   anomaliesOnly: boolean
 }
 
+export interface CapabilityPresentation { title: string; summary: string }
+export type PresentationResolver = (capability: Capability) => CapabilityPresentation
+
 export const EMPTY_FILTERS: InspectorFilters = {
   query: '', category: 'all', managementPlane: 'all', policy: 'all', verification: 'all', runtime: 'all', anomaliesOnly: false,
 }
 
 export function capabilityHasAnomaly(capability: Capability, snapshot: InspectionSnapshot): boolean {
-  return capability.verification !== 'verified'
-    || !capability.baseline.reviewed
-    || !capability.official
+  return capability.verification === 'drifted'
+    || (capability.official && !capability.baseline.reviewed)
+    || capability.configuration.profileOverride.state === 'unavailable'
+    || capability.configuration.profilePersistence.status === 'unwritable'
+    || capability.runtimeState.lifecycle === 'failed'
     || snapshot.compatibility.findings.some((finding) => finding.id === capability.id)
 }
 
-export function filterCapabilities(snapshot: InspectionSnapshot, filters: InspectorFilters): Capability[] {
+export function filterCapabilities(snapshot: InspectionSnapshot, filters: InspectorFilters, presentation?: PresentationResolver): Capability[] {
   const query = filters.query.trim().toLowerCase()
   return snapshot.capabilities.filter((capability) => {
-    if (query && ![capability.id, capability.packageName, capability.category, capability.managementPlane].join(' ').toLowerCase().includes(query)) return false
+    const display = presentation?.(capability)
+    if (query && ![display?.title, display?.summary, capability.id, capability.packageName, capability.category, capability.managementPlane].join(' ').toLowerCase().includes(query)) return false
     if (filters.category !== 'all' && capability.category !== filters.category) return false
     if (filters.managementPlane !== 'all' && capability.managementPlane !== filters.managementPlane) return false
     if (filters.policy !== 'all' && capability.policy.status !== filters.policy) return false
@@ -115,6 +121,10 @@ export function capabilityFromHash(hash: string): string | null {
   const match = /^#capability=([^&]+)$/.exec(hash)
   if (match === null) return null
   try { return decodeURIComponent(match[1]!) } catch { return null }
+}
+
+export function deepLinkIndex(capabilities: readonly Capability[], id: string | null): number {
+  return id === null ? -1 : capabilities.findIndex((capability) => capability.id === id)
 }
 
 /** Controls are presentation only; eligibility itself is always server-computed. */

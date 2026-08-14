@@ -1,6 +1,6 @@
 import type { CSSProperties, JSX } from 'react'
 import type { BuiltinTogglesTabProps } from './BuiltinTogglesTab.tsx'
-import { categoryLabel, lifecycleLabel, planeLabel, policyLabel } from './labels.ts'
+import { categoryLabel, lifecycleLabel, planeLabel, policyLabel, verificationLabel } from './labels.ts'
 import type { InspectorFilters as Filters, InspectionSnapshot } from './inspector-model.ts'
 
 const wrap: CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 8 }
@@ -16,7 +16,7 @@ export function InspectorFilters({ snapshot, filters, onChange, t }: { snapshot:
     {select('category', categories, t('filterCategory'), (value) => categoryLabel(t, value))}
     {select('managementPlane', planes, t('filterManagementPlane'), (value) => planeLabel(t, value))}
     {select('policy', ['manageable', 'locked'], t('filterPolicy'), (value) => policyLabel(t, value))}
-    {select('verification', ['verified', 'drifted', 'unverified'], t('filterVerification'))}
+    {select('verification', ['verified', 'drifted', 'unverified'], t('filterVerification'), (value) => verificationLabel(t, value))}
     {select('runtime', lifecycles, t('filterRuntime'), (value) => lifecycleLabel(t, value))}
     <label style={{ ...control, display: 'flex', gap: 6, alignItems: 'center' }}><input type="checkbox" checked={filters.anomaliesOnly} onChange={(event) => onChange({ ...filters, anomaliesOnly: event.target.checked })} />{t('filterAnomalies')}</label>
   </div>

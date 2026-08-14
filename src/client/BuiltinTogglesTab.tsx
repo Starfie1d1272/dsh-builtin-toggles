@@ -6,6 +6,7 @@ import { CompatibilitySummary } from './CompatibilitySummary.tsx'
 import { InspectorFilters } from './InspectorFilters.tsx'
 import { EMPTY_FILTERS, buildDiagnostics, capabilityFromHash, filterCapabilities, type InspectionSnapshot, type MutationAction } from './inspector-model.ts'
 import { fetchInspection, mutateAndRefresh } from './inspector-requests.ts'
+import { getCapabilityPresentation, type PresentationLocale } from './presentation.ts'
 
 export type BuiltinTogglesTabProps = PropsRuntime<'settings.plugins.tab'> & PropsLocale<'settings.builtins'>
 type View = { status: 'loading' } | { status: 'error' } | { status: 'ready'; snapshot: InspectionSnapshot }
@@ -23,6 +24,7 @@ export function BuiltinTogglesTab({ t }: BuiltinTogglesTabProps): JSX.Element {
   const [attempt, setAttempt] = useState(0)
   const queue = useRef<Promise<void>>(Promise.resolve())
   const deepLinkId = typeof window === 'undefined' ? null : capabilityFromHash(window.location.hash)
+  const presentationLocale = t('presentationLocale') as PresentationLocale
 
   const load = useCallback(async (silent = false): Promise<void> => {
     if (!silent) setView({ status: 'loading' })
@@ -33,6 +35,13 @@ export function BuiltinTogglesTab({ t }: BuiltinTogglesTabProps): JSX.Element {
     }
   }, [])
   useEffect(() => { void load() }, [attempt, load])
+  useEffect(() => {
+    if (view.status !== 'ready' || deepLinkId === null || typeof document === 'undefined') return
+    const target = [...document.querySelectorAll<HTMLElement>('[data-capability-id]')]
+      .find((element) => element.dataset.capabilityId === deepLinkId)
+    target?.scrollIntoView({ block: 'center' })
+    target?.focus({ preventScroll: true })
+  }, [deepLinkId, view])
 
   const mutate = useCallback((id: string, action: MutationAction): void => {
     const run = async (): Promise<void> => {
@@ -58,7 +67,8 @@ export function BuiltinTogglesTab({ t }: BuiltinTogglesTabProps): JSX.Element {
     try { await navigator.clipboard.writeText(buildDiagnostics(snapshot)); setMessage(t('diagnosticsCopied')) }
     catch { setMessage(t('diagnosticsCopyFailed')) }
   }, [t])
-  const visible = useMemo(() => view.status === 'ready' ? filterCapabilities(view.snapshot, filters) : [], [view, filters])
+  const presentation = useCallback((capability: import('./inspector-model.ts').Capability) => getCapabilityPresentation(presentationLocale, capability), [presentationLocale])
+  const visible = useMemo(() => view.status === 'ready' ? filterCapabilities(view.snapshot, filters, presentation) : [], [view, filters, presentation])
 
   if (view.status === 'loading') return <div style={page} aria-busy="true"><p style={text}>{t('loading')}</p></div>
   if (view.status === 'error') return <div style={page} role="alert"><p style={error}>{t('error')}</p><button type="button" style={button} onClick={() => setAttempt((value) => value + 1)}>{t('retry')}</button></div>
@@ -69,6 +79,6 @@ export function BuiltinTogglesTab({ t }: BuiltinTogglesTabProps): JSX.Element {
     <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}><p style={text}>{t('resultCount', { count: String(visible.length), total: String(snapshot.inventory.totalEntries) })}</p><button type="button" style={button} onClick={() => void copyDiagnostics(snapshot)}>{t('copyDiagnostics')}</button></div>
     <InspectorFilters snapshot={snapshot} filters={filters} onChange={setFilters} t={t} />
     {message === null ? null : <p style={text} role="status">{message}</p>}
-    {visible.length === 0 ? <p style={text}>{t('searchEmpty')}</p> : <ul style={list}>{visible.map((capability, index) => <CapabilityCard key={`${capability.id}-${index}`} domId={`capability-${capability.id}-${index}`} capability={capability} snapshot={snapshot} busy={busyId === capability.id} initiallyExpanded={deepLinkId === capability.id} onMutate={mutate} t={t} />)}</ul>}
+    {visible.length === 0 ? <p style={text}>{t('searchEmpty')}</p> : <ul style={list}>{visible.map((capability, index) => <CapabilityCard key={`${capability.id}-${index}`} domId={`capability-${index}`} capability={capability} presentation={presentation(capability)} snapshot={snapshot} busy={busyId === capability.id} initiallyExpanded={deepLinkId === capability.id} onMutate={mutate} t={t} />)}</ul>}
   </div>
 }

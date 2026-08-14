@@ -5,7 +5,7 @@
  * section via `settings.plugins.tab` (the canonical extension point — NOT a
  * new settings.section). Everything else comes from the host half's same-origin
  * API; the tab itself holds no state beyond the last snapshot. The display-only
- * catalog (catalog.ts / catalog.zh.ts) annotates every row.
+ * locale-aware display-only catalogs annotate every row.
  */
 
 import type {} from '@deepseek-ai/dsh-client-locale/client'
@@ -27,6 +27,8 @@ export {
   resolveCatalogEntry,
 } from './catalog.ts'
 export { getBuiltinCatalogEntry } from './catalog.zh.ts'
+export { getEnglishCatalogEntry } from './catalog.en.ts'
+export { getCapabilityPresentation } from './presentation.ts'
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface LocaleNamespaceMap {

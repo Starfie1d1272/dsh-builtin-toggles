@@ -2,7 +2,7 @@
  * Built-in plugin catalog — display-only data layer.
  *
  * This module holds the PRESENTATION metadata for the official DSH Web
- * built-in Loader entries: Chinese-first titles, summaries, categories,
+ * built-in Loader entries: locale-owned titles, summaries, categories,
  * impact / recommendation copy, lock notes and preset-managed flags.
  *
  * SECURITY BOUNDARY (never cross):
@@ -19,7 +19,7 @@
  *   the lookup helper returns a generic fallback instead of crashing.
  */
 
-/** Category labels (Chinese-first; English catalog later). */
+/** Legacy Chinese display categories retained for the display-only catalogs. */
 export type BuiltinCategory =
   | '界面功能'
   | '会话与数据'
@@ -108,8 +108,7 @@ export const UNKNOWN_FALLBACK_LOCK_NOTE =
  * Resolve one entry from a catalog record, falling back to the generic
  * unknown-id copy — never throws, so the UI cannot crash on an entry the
  * catalog has not documented yet. The bound convenience wrapper
- * getBuiltinCatalogEntry(id, moduleName) lives in the locale data module
- * (catalog.zh.ts today; catalog.en.ts can bind the same helper later).
+ * Locale-bound helpers live in catalog.zh.ts and catalog.en.ts.
  *
  * @param catalog    the display-only catalog record (keyed by loader id)
  * @param id         loader short id (e.g. ui-goal)

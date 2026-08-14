@@ -14,7 +14,7 @@ export function EvidenceDetails({ capability, snapshot, t }: { capability: Capab
     [t('expectedPackage'), capability.baseline.expectedPackageName ?? t('noEvidence')],
     [t('reviewed'), capability.baseline.reviewed ? t('yes') : t('no')],
     [t('reviewedReference'), reference === null ? t('noEvidence') : `${reference.source} · ${reference.packageName}@${reference.version} · ${reference.artifact}`],
-    [t('declaredInject'), capability.baseline.serviceEvidence.map((item) => item.expectedServices?.join(', ') ?? t('noEvidence')).join('; ') || t('noEvidence')],
+    [t('declaredInject'), capability.baseline.serviceEvidence.length === 0 ? t('noEvidence') : capability.baseline.serviceEvidence.map((item) => item.expectedServices === null ? t('injectNotDeclared') : item.expectedServices.length === 0 ? t('injectDeclaredEmpty') : item.expectedServices.join(', ')).join('; ')],
     [t('dependencyEvidence'), dependency === null ? t('noEvidence') : `${t('provides')}: ${dependency.provides.status}${dependency.provides.services === undefined ? '' : ` (${dependency.provides.services.join(', ')})`} · ${t('consumers')}: ${dependency.consumers.status}${dependency.consumers.ids === undefined ? '' : ` (${dependency.consumers.ids.join(', ')})`}`],
     [t('leafReview'), capability.baseline.leafReview ?? t('noEvidence')],
     [t('compatibilityFindings'), findings.map((finding) => finding.code).join(', ') || t('noFindings')],
