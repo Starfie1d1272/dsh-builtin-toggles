@@ -217,8 +217,9 @@ describe('inspection API v1 DTO', () => {
       inspected({ id: 'ui-future', name: '@deepseek-ai/dsh-client-ui-future', phase: null }),
       inspected({ id: 'third-party', name: '@example/plugin', disabled: true, phase: 'failed' }),
     ]
-    const response = buildInspectionResponse(entries, null, profile(entries.map((entry) => entry.id)))
+    const response = buildInspectionResponse(entries, null, profile(entries.map((entry) => entry.id)), 'allowed')
     assert.equal(response.schemaVersion, INSPECTION_SCHEMA_VERSION)
+    assert.deepEqual(response.access, { mutation: 'allowed' })
     assert.deepEqual(response.host, { plugin: 'builtin-toggles', profile: 'web' })
     assert.equal(response.inventory.totalEntries, 3)
     assert.equal(response.inventory.officialEntries, 2)
@@ -249,7 +250,7 @@ describe('inspection API v1 DTO', () => {
     const response = buildInspectionResponse(entries, null, profile(entries.map((entry) => entry.id), new Map([
       ['ui-goal', { state: 'explicitly-disabled' as const }],
       ['plan-mode', { state: 'explicitly-enabled' as const }],
-    ])))
+    ])), 'allowed')
     const goal = response.capabilities.find((entry) => entry.id === 'ui-goal')!
     const plan = response.capabilities.find((entry) => entry.id === 'plan-mode')!
     assert.equal(goal.configuration.profileOverride.state, 'explicitly-disabled')
@@ -262,7 +263,7 @@ describe('inspection API v1 DTO', () => {
     const entries = reviewedRc6RuntimeFixture().map((entry) => inspected({ id: entry.id, name: entry.packageName, declaredInject: entry.declaredInject }))
     const response = buildInspectionResponse(entries, {
       kind: 'dsh-release', value: '@deepseek-ai/dsh@0.1.0-rc.7', source: 'host-runtime-metadata',
-    }, profile(entries.map((entry) => entry.id)))
+    }, profile(entries.map((entry) => entry.id)), 'allowed')
     assert.equal(response.compatibility.status, 'drifted')
     assert.deepEqual(
       { verified: response.compatibility.verifiedCount, drifted: response.compatibility.driftedCount, unverified: response.compatibility.unverifiedCount },
@@ -273,7 +274,7 @@ describe('inspection API v1 DTO', () => {
 
   it('reports an unwritable profile patch as eligibility evidence without changing inherited semantics', () => {
     const entries = reviewedRc6RuntimeFixture().map((entry) => inspected({ id: entry.id, name: entry.packageName }))
-    const response = buildInspectionResponse(entries, null, profile(entries.map((entry) => entry.id), new Map([['ui-goal', { state: 'inherited' as const }]]), new Map([['ui-goal', { status: 'unwritable' as const, reason: 'non_literal_disabled' as const }]])))
+    const response = buildInspectionResponse(entries, null, profile(entries.map((entry) => entry.id), new Map([['ui-goal', { state: 'inherited' as const }]]), new Map([['ui-goal', { status: 'unwritable' as const, reason: 'non_literal_disabled' as const }]])), 'allowed')
     const goal = response.capabilities.find((entry) => entry.id === 'ui-goal')!
     assert.deepEqual(goal.configuration.profileOverride, { state: 'inherited' })
     assert.deepEqual(goal.configuration.profilePersistence, { status: 'unwritable', reason: 'non_literal_disabled' })
@@ -282,7 +283,7 @@ describe('inspection API v1 DTO', () => {
   })
 
   it('fails closed when a caller supplies no provenance for a runtime row', () => {
-    const response = buildInspectionResponse([inspected()], null, { profileOverrides: new Map(), profilePersistence: new Map() })
+    const response = buildInspectionResponse([inspected()], null, { profileOverrides: new Map(), profilePersistence: new Map() }, 'allowed')
     assert.deepEqual(response.capabilities[0]?.configuration.profileOverride, { state: 'unavailable', reason: 'profile_unavailable' })
     assert.deepEqual(response.capabilities[0]?.configuration.profilePersistence, { status: 'unwritable', reason: 'profile_patch_unreadable' })
     assert.equal(response.capabilities[0]?.mutationEligibility.status, 'ineligible')

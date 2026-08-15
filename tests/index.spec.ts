@@ -4,9 +4,48 @@
  */
 
 import assert from 'node:assert/strict'
+import { PassThrough } from 'node:stream'
 import { describe, it } from 'node:test'
+import type { IncomingHttpHeaders, IncomingMessage, ServerResponse } from 'node:http'
+import type { Context } from '@deepseek-ai/cordis'
 import type { Entry } from '@deepseek-ai/cordis-plugin-loader'
-import { buildSnapshot, decodeEntryId } from '../src/index.ts'
+import { apply, buildSnapshot, decodeEntryId, INSPECTION_API_PATH } from '../src/index.ts'
+
+type ApiHandler = (req: IncomingMessage, res: ServerResponse) => Promise<void>
+
+function testApi(trustedHosts: string[], entries: Entry[]): { handler: ApiHandler; updates: Array<boolean | null | undefined> } {
+  let handler: ApiHandler | undefined
+  const updates: Array<boolean | null | undefined> = []
+  for (const entry of entries) {
+    entry.update = async (options) => { updates.push(options.disabled) }
+  }
+  const context = {
+    get: () => ({ trustedHosts }),
+    loader: { entries: () => entries },
+    webServer: { register: (route: { handler: ApiHandler }) => { handler = route.handler; return () => {} } },
+    effect: (callback: () => (() => void)) => callback(),
+  } as unknown as Context
+  apply(context)
+  assert.ok(handler)
+  return { handler, updates }
+}
+
+async function invoke(handler: ApiHandler, method: string, url: string, headers: IncomingHttpHeaders, body?: string): Promise<{ status: number; body: unknown }> {
+  const request = new PassThrough()
+  Object.assign(request, { method, url, headers })
+  let status = 200
+  let payload = ''
+  const response = {
+    set statusCode(value: number) { status = value },
+    get statusCode() { return status },
+    setHeader: () => undefined,
+    end: (value?: string) => { payload = value ?? '' },
+  } as unknown as ServerResponse
+  const pending = handler(request as unknown as IncomingMessage, response)
+  request.end(body)
+  await pending
+  return { status, body: JSON.parse(payload) }
+}
 
 describe('decodeEntryId', () => {
   it('plain ids pass through', () => {
@@ -46,5 +85,40 @@ describe('legacy snapshot compatibility', () => {
       { id: 'ui-goal', name: '@deepseek-ai/dsh-client-ui-goal', disabled: false, phase: 'active', manageable: true },
       { id: 'ui-future', name: '@deepseek-ai/dsh-client-ui-future', disabled: true, phase: null, manageable: false, reason: 'unlisted' },
     ])
+  })
+})
+
+describe('loopback-only mutation transport', () => {
+  const goal = (): Entry => ({ options: { id: 'ui-goal', name: '@deepseek-ai/dsh-client-ui-goal' }, disabled: false } as unknown as Entry)
+
+  it('permits loopback inspection and marks its mutation transport allowed', async () => {
+    const api = testApi(['192.168.1.5:3080'], [goal()])
+    const result = await invoke(api.handler, 'GET', INSPECTION_API_PATH, { host: '127.0.0.1:3080', origin: 'http://127.0.0.1:3080', 'sec-fetch-site': 'same-origin' })
+    assert.equal(result.status, 200)
+    assert.equal((result.body as { access: { mutation: string } }).access.mutation, 'allowed')
+  })
+
+  it('permits trusted-LAN inspection as read-only and rejects its same-origin POST before any mutation', async () => {
+    const api = testApi(['192.168.1.5:3080'], [goal()])
+    const headers = { host: '192.168.1.5:3080', origin: 'http://192.168.1.5:3080', 'sec-fetch-site': 'same-origin' }
+    const inspection = await invoke(api.handler, 'GET', INSPECTION_API_PATH, headers)
+    assert.equal(inspection.status, 200)
+    assert.equal((inspection.body as { access: { mutation: string } }).access.mutation, 'loopback-required')
+    const mutation = await invoke(api.handler, 'POST', '/api/builtin-toggles/ui-goal', headers, JSON.stringify({ action: 'force-disable' }))
+    assert.equal(mutation.status, 403)
+    assert.deepEqual(mutation.body, {
+      ok: false,
+      error: 'loopback_required',
+      message: 'builtin-toggles: configuration mutation requires loopback same-origin access',
+    })
+    assert.deepEqual(api.updates, [])
+  })
+
+  it('lets loopback POST continue into the existing policy gate', async () => {
+    const api = testApi([], [{ options: { id: 'ui-commands', name: '@deepseek-ai/dsh-client-ui-commands' }, disabled: false } as unknown as Entry])
+    const result = await invoke(api.handler, 'POST', '/api/builtin-toggles/ui-commands', { host: 'localhost:3080', origin: 'http://localhost:3080', 'sec-fetch-site': 'same-origin' }, JSON.stringify({ action: 'force-disable' }))
+    assert.equal(result.status, 403)
+    assert.notEqual((result.body as { error: string }).error, 'loopback_required')
+    assert.deepEqual(api.updates, [])
   })
 })

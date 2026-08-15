@@ -17,18 +17,23 @@ function capability(overrides: Partial<Capability> = {}): Capability {
   }
 }
 function snapshot(capabilities: readonly Capability[] = [capability()]): InspectionSnapshot {
-  return { schemaVersion: 'builtin-toggles.inspection/v1', inventory: { totalEntries: capabilities.length, officialEntries: capabilities.filter((item) => item.official).length, externalEntries: capabilities.filter((item) => !item.official).length, reviewedEntries: capabilities.filter((item) => item.baseline.reviewed).length }, compatibility: { status: 'unverified', runtimeIdentity: { status: 'unavailable', expected: { value: '@deepseek-ai/dsh@0.1.0-rc.6' }, observed: null }, findings: [{ scope: 'composition', code: 'runtime_release_identity_unavailable' }], verifiedCount: 0, driftedCount: 0, unverifiedCount: capabilities.length }, capabilities }
+  return { schemaVersion: 'builtin-toggles.inspection/v1', access: { mutation: 'allowed' }, inventory: { totalEntries: capabilities.length, officialEntries: capabilities.filter((item) => item.official).length, externalEntries: capabilities.filter((item) => !item.official).length, reviewedEntries: capabilities.filter((item) => item.baseline.reviewed).length }, compatibility: { status: 'unverified', runtimeIdentity: { status: 'unavailable', expected: { value: '@deepseek-ai/dsh@0.1.0-rc.6' }, observed: null }, findings: [{ scope: 'composition', code: 'runtime_release_identity_unavailable' }], verifiedCount: 0, driftedCount: 0, unverifiedCount: capabilities.length }, capabilities }
 }
 
 describe('Capability Inspector client model', () => {
   it('keeps an eligible reviewed leaf operable when runtime identity is unavailable', () => {
-    assert.deepEqual(availableActions(capability()), ['force-enable', 'force-disable'])
+    assert.deepEqual(availableActions(capability(), snapshot()), ['force-enable', 'force-disable'])
   })
   it('represents all three profile states and never renders controls for unavailable or ineligible rows', () => {
-    assert.deepEqual(availableActions(capability({ configuration: { ...capability().configuration, profileOverride: { state: 'explicitly-enabled' } } })), ['force-disable', 'restore-inheritance'])
-    assert.deepEqual(availableActions(capability({ configuration: { ...capability().configuration, profileOverride: { state: 'explicitly-disabled' } } })), ['force-enable', 'restore-inheritance'])
-    assert.deepEqual(availableActions(capability({ configuration: { ...capability().configuration, profileOverride: { state: 'unavailable' } } })), [])
-    assert.deepEqual(availableActions(capability({ mutationEligibility: { status: 'ineligible', reasons: ['global_structural_drift'], limitations: [] } })), [])
+    assert.deepEqual(availableActions(capability({ configuration: { ...capability().configuration, profileOverride: { state: 'explicitly-enabled' } } }), snapshot()), ['force-disable', 'restore-inheritance'])
+    assert.deepEqual(availableActions(capability({ configuration: { ...capability().configuration, profileOverride: { state: 'explicitly-disabled' } } }), snapshot()), ['force-enable', 'restore-inheritance'])
+    assert.deepEqual(availableActions(capability({ configuration: { ...capability().configuration, profileOverride: { state: 'unavailable' } } }), snapshot()), [])
+    assert.deepEqual(availableActions(capability({ mutationEligibility: { status: 'ineligible', reasons: ['global_structural_drift'], limitations: [] } }), snapshot()), [])
+  })
+  it('does not offer mutation actions to a remote read-only inspection snapshot', () => {
+    const remote = snapshot()
+    remote.access = { mutation: 'loopback-required' }
+    assert.deepEqual(availableActions(capability(), remote), [])
   })
   it('filters broad inspection rows by localized display text, server fields, and real anomalies', () => {
     const all = snapshot([
