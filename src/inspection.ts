@@ -84,7 +84,7 @@ export function buildInspectionResponse(
   entries: readonly InspectionRuntimeEntry[],
   runtimeIdentity: RuntimeCompositionIdentity | null,
   profile: ProfileInspectionSnapshot,
-  mutationAccess: 'allowed' | 'loopback-required' = 'allowed',
+  mutationAccess: 'allowed' | 'loopback-required',
 ): InspectionResponseV1 {
   const baseline = baselineById()
   const runtimeEvidence: RuntimeEntryEvidence[] = entries.map((entry) => ({

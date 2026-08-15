@@ -40,6 +40,8 @@
     "cordis.patch.yml",
     "README.md",
     "README.en.md",
+    "CONTRIBUTING.md",
+    "CONTRIBUTING.zh-CN.md",
     "COMPATIBILITY.md",
     "CHANGELOG.md",
     "SECURITY.md",

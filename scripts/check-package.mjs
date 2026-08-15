@@ -13,7 +13,7 @@ try {
   const files = execFileSync('tar', ['-tzf', tarball], { encoding: 'utf8' }).trim().split('\n')
   for (const required of [
     'package/package.json', 'package/lib/index.js', 'package/lib/index.d.ts', 'package/lib/client.js', 'package/cordis.patch.yml',
-    'package/README.md', 'package/README.en.md', 'package/COMPATIBILITY.md', 'package/CHANGELOG.md', 'package/SECURITY.md', 'package/docs/inspection-api.md',
+    'package/README.md', 'package/README.en.md', 'package/CONTRIBUTING.md', 'package/CONTRIBUTING.zh-CN.md', 'package/COMPATIBILITY.md', 'package/CHANGELOG.md', 'package/SECURITY.md', 'package/docs/inspection-api.md',
   ]) {
     if (!files.includes(required)) throw new Error(`tarball missing ${required}`)
   }
