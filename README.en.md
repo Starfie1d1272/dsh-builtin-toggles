@@ -16,8 +16,18 @@ Find it under **Settings → Plugins → Built-ins**. The Host generates the ins
 
 Prerequisite: an initialized DSH `web` profile. Later public DSH releases may still install or run, but do not become a supported/reviewed baseline without an explicit review.
 
+With the `dsh` CLI installed:
+
 ```sh
 dsh plugin --profile web add dsh-builtin-toggles
+dsh web
+```
+
+With npx (no global `dsh` install needed):
+
+```sh
+npx @deepseek-ai/dsh plugin --profile web add dsh-builtin-toggles
+npx @deepseek-ai/dsh web
 ```
 
 Restart the DSH web/gateway so it reads the bundle at startup.
@@ -55,8 +65,16 @@ See [COMPATIBILITY.md](COMPATIBILITY.md) for review boundaries and [SECURITY.md]
 
 ## Uninstall
 
+With the `dsh` CLI installed:
+
 ```sh
 dsh plugin --profile web remove dsh-builtin-toggles
+```
+
+With npx:
+
+```sh
+npx @deepseek-ai/dsh plugin --profile web remove dsh-builtin-toggles
 ```
 
 Restart afterward. The package does not remove arbitrary user profile content.
