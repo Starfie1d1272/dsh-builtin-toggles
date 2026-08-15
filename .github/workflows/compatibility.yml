@@ -9,6 +9,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: compatibility-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   reviewed-rc6:
     name: reviewed rc.6 gate
@@ -22,6 +26,12 @@ jobs:
         with:
           node-version: 22.19.0
           cache: pnpm
+      - name: Cache reviewed rc.6 runtime npm downloads
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
+        with:
+          node-version: 22.19.0
+          cache: npm
+          cache-dependency-path: fixtures/reviewed-rc6-runtime/package-lock.json
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
       - name: Pack reviewed DSH artifacts in an isolated directory
@@ -47,13 +57,9 @@ jobs:
           PLUGIN_TARBALL="$(npm pack --silent --pack-destination .agent-tmp/compatibility)"
           ISOLATED="$RUNNER_TEMP/dsh-builtin-toggles-rc6"
           mkdir -p "$ISOLATED"
+          cp "$GITHUB_WORKSPACE/fixtures/reviewed-rc6-runtime/package.json" "$GITHUB_WORKSPACE/fixtures/reviewed-rc6-runtime/package-lock.json" "$ISOLATED/"
           cd "$ISOLATED"
-          npm init -y >/dev/null
-          # rc.6 permits a newer AWS SDK leaf than has reached the public registry.
-          # Keep the real reviewed DSH package installable without changing its
-          # profile/runtime composition under test.
-          npm pkg set 'overrides.@aws-sdk/credential-provider-ini=3.973.13'
-          npm install @deepseek-ai/dsh@0.1.0-rc.6 "$GITHUB_WORKSPACE/.agent-tmp/compatibility/$PLUGIN_TARBALL"
+          npm ci
           export DSH_HOME="$ISOLATED/home"
           DSH_PORT=39103
           DSH="$ISOLATED/node_modules/.bin/dsh"
@@ -190,6 +196,7 @@ jobs:
 
   current-public-observation:
     name: current public observation
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
