@@ -1,0 +1,11 @@
+{
+  "name": "reviewed-rc6-runtime-fixture",
+  "private": true,
+  "description": "Frozen install fixture for the reviewed DSH Web rc.6 compatibility lane.",
+  "overrides": {
+    "@aws-sdk/credential-provider-ini": "3.973.13"
+  },
+  "dependencies": {
+    "@deepseek-ai/dsh": "0.1.0-rc.6"
+  }
+}
