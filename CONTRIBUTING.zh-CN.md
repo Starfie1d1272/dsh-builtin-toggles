@@ -30,6 +30,7 @@ pnpm install
 pnpm typecheck
 pnpm test
 pnpm build
+pnpm pack:check
 ```
 
 提交前执行与本次改动相关的检查，例如：
@@ -123,3 +124,10 @@ npm 包刻意只包含 package 白名单选中的运行时/包文件；`docs/` �
 - 说明任何 policy 或运行时行为变更背后的证据。
 
 小的目录/文档修复不需要夹带无关的架构改动。
+
+## 已审阅兼容性维护
+
+受支持的 baseline 是经过审阅的已发布 DSH artifact，而不是版本范围。请遵循
+[COMPATIBILITY.md](COMPATIBILITY.md)：先机械校验 roster、package identity 和
+`inject`，再对 safe leaf 的 service/consumer 结论进行独立架构与安全审查。
+current-public workflow 的观察结果不会自动扩展 allowlist，也不会自动成为受支持版本。

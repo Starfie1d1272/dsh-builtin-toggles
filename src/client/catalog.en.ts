@@ -1,19 +1,5 @@
 /** English presentation catalog. It is display/search data only. */
 import { moduleShortName, type BuiltinCatalogEntry } from './catalog.ts'
-import { zhCatalog } from './catalog.zh.ts'
-
-function titleFor(id: string): string {
-  return id.split('-').filter(Boolean).map((part) => part.length <= 3 ? part.toUpperCase() : part[0]!.toUpperCase() + part.slice(1)).join(' ')
-}
-
-function summaryFor(id: string): string {
-  if (id.startsWith('ui-')) return 'Provides the corresponding interface in DSH Web.'
-  if (id.startsWith('tool-')) return 'Provides an Agent tool capability assembled by the active preset.'
-  if (id.startsWith('skill-')) return 'Provides infrastructure for Skills in the active Agent composition.'
-  if (id.startsWith('api-')) return 'Provides an internal API capability for the DSH Web composition.'
-  if (id.startsWith('client-')) return 'Provides browser-runtime infrastructure for DSH Web.'
-  return 'Provides an official built-in capability in the DSH Web composition.'
-}
 
 const ENGLISH_OVERRIDES: Readonly<Record<string, Pick<BuiltinCatalogEntry, 'title' | 'summary'>>> = {
   'ui-deliverables': { title: 'Deliverables', summary: 'Lists files created or changed in the current response and makes recognized references clickable.' },
@@ -27,9 +13,9 @@ const ENGLISH_OVERRIDES: Readonly<Record<string, Pick<BuiltinCatalogEntry, 'titl
   'ui-trajectory': { title: 'Execution trajectory', summary: 'Displays turn-by-turn user, assistant, and tool events for execution inspection.' },
 }
 
-/** Mirrors the known Chinese catalog ids while keeping English copy locale-owned. */
+/** Only reviewed English copy is present; unknown rows use the honest fallback. */
 export const enCatalog: Readonly<Record<string, BuiltinCatalogEntry>> = Object.fromEntries(
-  Object.keys(zhCatalog).map((id) => [id, { ...ENGLISH_OVERRIDES[id], title: ENGLISH_OVERRIDES[id]?.title ?? titleFor(id), summary: ENGLISH_OVERRIDES[id]?.summary ?? summaryFor(id), category: '系统基础' }]),
+  Object.entries(ENGLISH_OVERRIDES).map(([id, entry]) => [id, { ...entry, category: '系统基础' }]),
 )
 
 export function getEnglishCatalogEntry(id: string, moduleName: string): BuiltinCatalogEntry {

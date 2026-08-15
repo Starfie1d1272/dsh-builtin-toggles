@@ -7,7 +7,7 @@ import {
 import { OFFICIAL_PACKAGE_PREFIX } from './policy.ts'
 
 export type VerificationStatus = 'verified' | 'drifted' | 'unverified'
-export type CompatibilityFindingCode = 'missing_expected_entry' | 'new_official_entry' | 'package_identity_changed' | 'declared_inject_changed' | 'baseline_package_unknown' | 'duplicate_runtime_id' | 'runtime_release_identity_unavailable' | 'runtime_release_identity_mismatch'
+export type CompatibilityFindingCode = 'missing_expected_entry' | 'new_official_entry' | 'package_identity_changed' | 'declared_inject_changed' | 'baseline_package_unknown' | 'duplicate_runtime_id' | 'runtime_augmentation_shape_changed' | 'runtime_augmentation_id_conflicts_baseline' | 'runtime_release_identity_unavailable' | 'runtime_release_identity_mismatch'
 
 export interface RuntimeEntryEvidence {
   id: string
@@ -15,6 +15,37 @@ export interface RuntimeEntryEvidence {
   /** False means Loader exposed an inject shape this inspector cannot compare. */
   declaredInjectKnown?: boolean
   declaredInject: readonly string[] | null
+}
+
+/**
+ * DSH rc.6 creates these platform/bootstrap helpers after the reviewed patch
+ * composition has loaded. Loader generates their ids, so those ids are not
+ * release evidence. The reviewed evidence is instead the strict runtime shape:
+ * one host/client directory-picker pair using the same platform variant and
+ * zero or one HMR helper. They are not published patch-baseline rows and remain
+ * locked.
+ */
+type RuntimeAugmentationRole = 'host-directory-picker' | 'client-directory-picker' | 'hmr'
+type DirectoryPickerVariant = 'browse' | 'native'
+
+interface ReviewedRuntimeAugmentation {
+  role: RuntimeAugmentationRole
+  variant?: DirectoryPickerVariant
+}
+
+function reviewedRuntimeAugmentation(entry: RuntimeEntryEvidence): ReviewedRuntimeAugmentation | undefined {
+  switch (entry.packageName) {
+    case '@deepseek-ai/dsh-host-directory-picker-browse':
+      return { role: 'host-directory-picker', variant: 'browse' }
+    case '@deepseek-ai/dsh-host-directory-picker-native':
+      return { role: 'host-directory-picker', variant: 'native' }
+    case '@deepseek-ai/dsh-client-ui-directory-picker-browse':
+      return { role: 'client-directory-picker', variant: 'browse' }
+    case '@deepseek-ai/dsh-client-ui-directory-picker-native':
+      return { role: 'client-directory-picker', variant: 'native' }
+    case '@deepseek-ai/cordis-plugin-hmr':
+      return { role: 'hmr' }
+  }
 }
 
 /** Evidence supplied by a stable, Host-owned runtime identity seam. */
@@ -81,9 +112,9 @@ export function evaluateCompatibility(
     else entries.push(entry)
   }
   const findings: CompatibilityFinding[] = []
-  let structurallyVerifiedCount = 0
-  let driftedCount = 0
-  let unverifiedCount = 0
+  const directDriftIds = new Set<string>()
+  const structurallyMatchingReviewedIds = new Set<string>()
+  const incompleteReviewedIds = new Set<string>()
   const identityStatus: RuntimeIdentityStatus = runtimeIdentity === null
     ? 'unavailable'
     : runtimeIdentity.kind === expectedIdentity.kind && runtimeIdentity.value === expectedIdentity.value
@@ -92,10 +123,8 @@ export function evaluateCompatibility(
 
   if (identityStatus === 'unavailable') {
     findings.push({ scope: 'composition', code: 'runtime_release_identity_unavailable', expected: expectedIdentity, observed: null })
-    unverifiedCount += 1
   } else if (identityStatus === 'mismatched') {
     findings.push({ scope: 'composition', code: 'runtime_release_identity_mismatch', expected: expectedIdentity, observed: runtimeIdentity })
-    unverifiedCount += 1
   }
 
   const duplicateIds = new Set<string>()
@@ -103,56 +132,120 @@ export function evaluateCompatibility(
     if (entries.length < 2) continue
     duplicateIds.add(id)
     findings.push({ scope: 'entry', code: 'duplicate_runtime_id', id, observed: entries.map((entry) => entry.packageName) })
-    driftedCount += 1
+    directDriftIds.add(id)
   }
 
   for (const reviewed of baseline) {
     const entries = runtimeById.get(reviewed.id)
     if (entries === undefined) {
       findings.push({ scope: 'entry', code: 'missing_expected_entry', id: reviewed.id, expected: reviewed.expectedPackageName })
-      driftedCount += 1
+      directDriftIds.add(reviewed.id)
       continue
     }
     if (duplicateIds.has(reviewed.id)) continue
     const entry = entries[0]!
     if (reviewed.expectedPackageName === null) {
       findings.push({ scope: 'entry', code: 'baseline_package_unknown', id: reviewed.id, observed: entry.packageName })
-      unverifiedCount += 1
+      incompleteReviewedIds.add(reviewed.id)
       continue
     }
     if (entry.packageName !== reviewed.expectedPackageName) {
       findings.push({ scope: 'entry', code: 'package_identity_changed', id: reviewed.id, expected: reviewed.expectedPackageName, observed: entry.packageName })
-      driftedCount += 1
+      directDriftIds.add(reviewed.id)
       continue
     }
     const declaredInject = reviewed.serviceEvidence.find((evidence) => evidence.kind === 'declared-inject')
     if (declaredInject !== undefined && !sameInject(entry.declaredInject, entry.declaredInjectKnown !== false, declaredInject.expectedServices)) {
       findings.push({ scope: 'entry', code: 'declared_inject_changed', id: reviewed.id, expected: declaredInject.expectedServices, observed: entry.declaredInject })
-      driftedCount += 1
+      directDriftIds.add(reviewed.id)
       continue
     }
-    structurallyVerifiedCount += 1
+    structurallyMatchingReviewedIds.add(reviewed.id)
   }
 
+  const runtimeAugmentations: Array<{ entry: RuntimeEntryEvidence; evidence: ReviewedRuntimeAugmentation }> = []
+  let observedRuntimeAugmentation = false
   for (const [id, entries] of runtimeById) {
+    for (const entry of entries) {
+      const augmentation = reviewedRuntimeAugmentation(entry)
+      if (augmentation === undefined) continue
+      const reviewed = expected.get(entry.id)
+      if (reviewed === undefined || reviewed.expectedPackageName !== entry.packageName) observedRuntimeAugmentation = true
+      if (reviewed !== undefined && reviewed.expectedPackageName !== entry.packageName) {
+        findings.push({
+          scope: 'entry', code: 'runtime_augmentation_id_conflicts_baseline', id: entry.id,
+          expected: reviewed.expectedPackageName, observed: entry.packageName,
+        })
+        directDriftIds.add(entry.id)
+      }
+    }
     if (duplicateIds.has(id)) continue
     const entry = entries[0]!
     if (!entry.packageName.startsWith(OFFICIAL_PACKAGE_PREFIX)) continue
     if (expected.has(entry.id)) continue
+    const augmentation = reviewedRuntimeAugmentation(entry)
+    if (augmentation !== undefined) {
+      runtimeAugmentations.push({ entry, evidence: augmentation })
+      continue
+    }
     findings.push({ scope: 'entry', code: 'new_official_entry', id: entry.id, observed: entry.packageName })
-    driftedCount += 1
+    directDriftIds.add(entry.id)
   }
 
+  if (observedRuntimeAugmentation) {
+    const reportAugmentationShape = (id: string, expectedShape: string, observedShape: string | readonly string[] | null): void => {
+      findings.push({ scope: 'entry', code: 'runtime_augmentation_shape_changed', id, expected: expectedShape, observed: observedShape })
+      directDriftIds.add(id)
+    }
+    const host = runtimeAugmentations.filter(({ evidence }) => evidence.role === 'host-directory-picker')
+    const client = runtimeAugmentations.filter(({ evidence }) => evidence.role === 'client-directory-picker')
+    const hmr = runtimeAugmentations.filter(({ evidence }) => evidence.role === 'hmr')
+    for (const [role, entries] of [
+      ['host-directory-picker', host],
+      ['client-directory-picker', client],
+    ] as const) {
+      if (entries.length !== 1) {
+        reportAugmentationShape(`rc6-runtime-augmentation-${role}`, `exactly one ${role} helper`, entries.map(({ entry }) => entry.packageName))
+      }
+    }
+    if (hmr.length > 1) {
+      reportAugmentationShape('rc6-runtime-augmentation-hmr', 'zero or one hmr helper', hmr.map(({ entry }) => entry.packageName))
+    }
+    if (host.length === 1 && client.length === 1 && host[0]!.evidence.variant !== client[0]!.evidence.variant) {
+      reportAugmentationShape(
+        'rc6-runtime-augmentation-directory-picker-variant',
+        'matching host/client directory-picker variants',
+        [host[0]!.entry.packageName, client[0]!.entry.packageName],
+      )
+    }
+    for (const { entry } of runtimeAugmentations) {
+      // rc.6 consistently exposes no row-level inject for these generated
+      // helpers. Compare that fact only when Loader made it observable.
+      if (entry.declaredInjectKnown !== false && entry.declaredInject !== null) {
+        reportAugmentationShape(`rc6-runtime-augmentation-inject-${entry.id}`, 'no declared inject', entry.declaredInject)
+      }
+    }
+  }
+
+  const identityBound = identityStatus === 'matched'
+  const unverifiedCount = incompleteReviewedIds.size
+    + (identityBound ? 0 : structurallyMatchingReviewedIds.size)
+
   return {
-    // Without a trustworthy release binding, a structural difference is still
-    // reported but cannot be attributed to a reviewed baseline as drift.
-    status: identityStatus !== 'matched' ? 'unverified' : driftedCount > 0 ? 'drifted' : unverifiedCount > 0 ? 'unverified' : 'verified',
+    // A direct structural difference and a trustworthy identity mismatch are
+    // both drift. Missing proof alone remains unverified.
+    status: identityStatus === 'mismatched' || directDriftIds.size > 0
+      ? 'drifted'
+      : unverifiedCount > 0
+        ? 'unverified'
+        : 'verified',
     runtimeIdentity: { expected: expectedIdentity, observed: runtimeIdentity, status: identityStatus },
     findings,
-    // A structurally matching row is not verified until the composition is
-    // also bound to the reviewed release identity.
-    verifiedCount: identityStatus === 'matched' ? structurallyVerifiedCount : 0,
-    driftedCount,
-    unverifiedCount: unverifiedCount + (identityStatus === 'matched' ? 0 : structurallyVerifiedCount),
+    // These are entry assertion counts only: a composition identity finding
+    // never contributes a synthetic extra row. Missing expected ids and new
+    // official ids each count once by id; duplicate runtime ids likewise.
+    verifiedCount: identityBound ? structurallyMatchingReviewedIds.size : 0,
+    driftedCount: directDriftIds.size,
+    unverifiedCount,
   }
 }

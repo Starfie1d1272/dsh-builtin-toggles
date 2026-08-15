@@ -73,7 +73,8 @@ export interface MutateOk {
     id: string
     action: MutationAction
     disabled: boolean | null
-    runtime: true
+    /** Explicit overrides are immediate; inheritance waits for DSH HMR composition. */
+    runtimeEffect: 'applied' | 'recomposing'
     persisted: boolean
   }
 }
@@ -137,7 +138,7 @@ export async function runToggle(
       const persisted = (await deps.persist(deps.patchFile, id, action)).changed
       return {
         status: 200,
-        body: { ok: true, id, action, disabled, runtime: true, persisted },
+        body: { ok: true, id, action, disabled, runtimeEffect: 'recomposing', persisted },
       }
     } catch (error) {
       return persistFailure(error)
@@ -166,7 +167,7 @@ export async function runToggle(
 
   return {
     status: 200,
-    body: { ok: true, id, action, disabled, runtime: true, persisted },
+    body: { ok: true, id, action, disabled, runtimeEffect: 'applied', persisted },
   }
 }
 

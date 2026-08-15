@@ -6,8 +6,10 @@
  * structure we do not understand, so a generic parse → stringify round trip
  * is forbidden. This writer only:
  *
- * - recognizes TOP-LEVEL `- id: <exact id>` rows (column 0) as the override
- *   target; an id inside a nested `insert:` block is never edited in place;
+ * - recognizes an exact TOP-LEVEL mapping id in the safe ordinary YAML
+ *   spellings (plain or quoted; first or later direct field). An id inside a
+ *   nested `insert:` block is never edited in place; unfamiliar top-level id
+ *   syntax refuses the operation rather than risking a duplicate override;
  * - adds, replaces, or removes only that row's OWN literal `disabled:` field
  *   (at the row's observed child indentation); when restore leaves a minimal
  *   row empty, it removes that row while retaining a valid empty sequence;
@@ -34,7 +36,7 @@
  * of being overwritten, and two of our own writers can never interleave.
  */
 
-import { existsSync, readFileSync, statSync } from 'node:fs'
+import { lstatSync, readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { withFileLock, writeFileAtomic } from '@deepseek-ai/dsh-atomic-write'
@@ -69,7 +71,7 @@ export type ProfileOverrideState = 'inherited' | 'explicitly-enabled' | 'explici
 export interface ProfileOverrideInspection {
   state: ProfileOverrideState | 'unavailable'
   /** An unavailable state is read-only information, never an authorization. */
-  reason?: 'duplicate_top_level_row' | 'duplicate_disabled_field' | 'non_literal_disabled' | 'profile_unavailable'
+  reason?: 'duplicate_top_level_row' | 'duplicate_disabled_field' | 'non_literal_disabled' | 'ambiguous_top_level_id' | 'profile_unavailable'
 }
 
 /**
@@ -81,8 +83,14 @@ export type ProfileMutationPreflight =
   | { status: 'writable' }
   | {
     status: 'unwritable'
-    reason: 'profile_patch_missing' | 'profile_patch_unreadable' | 'duplicate_top_level_row' | 'duplicate_disabled_field' | 'non_literal_disabled'
+    reason: 'profile_patch_missing' | 'profile_patch_unreadable' | 'duplicate_top_level_row' | 'duplicate_disabled_field' | 'non_literal_disabled' | 'ambiguous_top_level_id'
   }
+
+/** One coherent, read-only profile observation. It is never write authority. */
+export interface ProfileInspectionSnapshot {
+  profileOverrides: ReadonlyMap<string, ProfileOverrideInspection>
+  profilePersistence: ReadonlyMap<string, ProfileMutationPreflight>
+}
 
 /** EOL style of the file, from its first newline; defaults to LF. */
 function detectEol(content: string): string {
@@ -92,7 +100,7 @@ function detectEol(content: string): string {
 
 /** Whether a line is a top-level list item (`- …` at column 0). */
 function isTopLevelItem(line: string): boolean {
-  return /^-\s/.test(line)
+  return /^-(?:\s|$)/.test(line)
 }
 
 /** Whether a line is column-0 content (not indented, not blank, not a comment). */
@@ -100,11 +108,34 @@ function isTopLevelContent(line: string): boolean {
   return line.length > 0 && !/^\s/.test(line) && !line.startsWith('#')
 }
 
-/** Parse the exact id of a top-level `- id: …` row; null for anything else. */
-function topLevelRowId(line: string): string | null {
-  if (!isTopLevelItem(line)) return null
-  const match = /^-\s+id:\s*(\S+)/.exec(line)
-  return match === null ? null : match[1]!
+type ParsedScalar = { status: 'known'; value: string } | { status: 'ambiguous' }
+
+/**
+ * Read only the boring YAML scalar spellings we can preserve byte-for-byte.
+ * YAML has many more legal scalar forms; those are deliberately ambiguous
+ * here rather than being half-parsed into a possibly different id.
+ */
+function parseSafeScalar(raw: string): ParsedScalar {
+  const value = raw.trim()
+  const plain = /^([A-Za-z0-9][A-Za-z0-9._/@+-]*)(?:\s+#.*)?$/.exec(value)
+  if (plain !== null) return { status: 'known', value: plain[1]! }
+  const single = /^'((?:''|[^'])*)'(?:\s+#.*)?$/.exec(value)
+  if (single !== null) return { status: 'known', value: single[1]!.replace(/''/g, "'") }
+  const double = /^("(?:[^"\\]|\\["\\/bfnrt]|\\u[0-9a-fA-F]{4})*")(?:\s+#.*)?$/.exec(value)
+  if (double !== null) {
+    try { return { status: 'known', value: JSON.parse(double[1]!) as string } } catch { /* fail closed below */ }
+  }
+  return { status: 'ambiguous' }
+}
+
+function isPropertyKey(raw: string, expected: 'id' | 'disabled'): boolean {
+  return raw === expected || raw === `'${expected}'` || raw === `"${expected}"`
+}
+
+function propertyValue(line: string, indent: number, listItem: boolean, key: 'id' | 'disabled'): string | null {
+  const prefix = listItem ? `^-${'\\s+'}` : `^${' '.repeat(indent)}`
+  const match = new RegExp(`${prefix}((?:id|disabled)|'(?:id|disabled)'|"(?:id|disabled)")\\s*:\\s*(.*)$`).exec(line)
+  return match !== null && isPropertyKey(match[1]!, key) ? match[2]! : null
 }
 
 interface TargetRow {
@@ -117,45 +148,140 @@ interface TargetRow {
   rowInlineComment: string
 }
 
-function targetRows(lines: readonly string[], id: string): number[] {
-  const rows: number[] = []
-  for (let i = 0; i < lines.length; i += 1) if (topLevelRowId(lines[i]!) === id) rows.push(i)
-  return rows
+interface RowShape {
+  start: number
+  end: number
+  /** Proven direct-field indentation; never inferred from an arbitrary descendant. */
+  directIndent: number | null
+  /** False only for an ordinary block-mapping list item we can bound safely. */
+  transparent: boolean
+  idFields: readonly { index: number; scalar: ParsedScalar }[]
 }
 
-/** Locate one exact top-level override row without ever traversing `insert:`. */
-function locateTargetRow(lines: readonly string[], id: string): TargetRow | null {
-  const rows = targetRows(lines, id)
-  if (rows.length > 1) throw new PatchError(`builtin-toggles: duplicate top-level override rows for ${id}; refusing to guess`)
-  const start = rows[0]
-  if (start === undefined) return null
+function inlineMappingValue(line: string): string | null {
+  const match = /^-\s+[^\s:#][^:]*:\s*(.*)$/.exec(line)
+  return match === null ? null : match[1]!
+}
+
+function inlineMappingKey(line: string): string | null {
+  const match = /^-\s+([^\s:#][^:]*):\s*/.exec(line)
+  return match === null ? null : match[1]!
+}
+
+function isScalarAnchor(raw: string): boolean {
+  if (parseSafeScalar(raw).status === 'known') return true
+  // `name: @deepseek-ai/...` is an existing safe reordered-row spelling. It
+  // is not an id scalar, but it is still a non-block value and therefore
+  // proves a following mapping field cannot be its descendant.
+  return /^(?![!&*|>{[\]])[^\s:#][^\s#]*(?:\s+#.*)?$/.test(raw.trim())
+}
+
+function mappingValueAtIndent(line: string, indent: number): string | null {
+  const match = new RegExp(`^${' '.repeat(indent)}[^\\s:#][^:]*:\\s*(.*)$`).exec(line)
+  return match === null ? null : match[1]!
+}
+
+function rowShape(lines: readonly string[], start: number): RowShape {
   let end = lines.length
   for (let i = start + 1; i < lines.length; i += 1) {
-    if (isTopLevelItem(lines[i]!) || isTopLevelContent(lines[i]!)) {
-      end = i
-      break
-    }
+    if (isTopLevelItem(lines[i]!) || isTopLevelContent(lines[i]!)) { end = i; break }
   }
-  let childIndent = 2
+  // A flow collection, tag, anchor, alias, scalar, or any other unfamiliar
+  // top-level item can legally contain an id that this line scanner cannot
+  // see. Do not append an override while one exists: it could shadow a target.
+  const itemContent = lines[start]!.slice(1).trimStart()
+  const transparent = itemContent.length === 0
+    || /^(?:[A-Za-z][A-Za-z0-9_-]*|'(?:''|[^'])*'|"(?:[^"\\]|\\.)*")\s*:/.test(itemContent)
+  const idFields: { index: number; scalar: ParsedScalar }[] = []
+  const inline = propertyValue(lines[start]!, 0, true, 'id')
+  if (inline !== null) idFields.push({ index: start, scalar: parseSafeScalar(inline) })
+
+  // The old scanner took the first descendant's indentation as the row's
+  // direct field level. That turns `config: { id: … }`-style block children
+  // into row fields. Only an inline scalar establishes the fixed canonical
+  // direct-sibling column; otherwise the row is deliberately opaque.
+  // `insert:` is the one established nested-list form: its nested `- id`
+  // rows are skipped, while a possible direct mapping field still makes the
+  // row ambiguous rather than guessed.
+  const inlineValue = inlineMappingValue(lines[start]!)
+  const scalarAnchor = inlineValue !== null && isScalarAnchor(inlineValue)
+  const inlineKey = inlineMappingKey(lines[start]!)
+  // A top-level `- key: scalar` starts its mapping key at column two, which
+  // is the only direct-sibling indentation this textual grammar accepts. We
+  // never derive that level from a descendant line.
+  const directIndent = scalarAnchor ? 2 : null
+  let safeNestedInsert = inlineKey === 'insert' && inlineValue !== null && inlineValue.trim() === ''
+  let opaqueDescendant = false
+  let nestedMappingOpen = false
+
   for (let i = start + 1; i < end; i += 1) {
     const line = lines[i]!
     const trimmed = line.trimStart()
     if (trimmed.length === 0 || trimmed.startsWith('#')) continue
-    childIndent = line.length - trimmed.length
-    break
+    const indent = line.length - trimmed.length
+
+    if (directIndent === null) {
+      if (safeNestedInsert && indent > 2 && trimmed.startsWith('-')) {
+        continue
+      } else if (safeNestedInsert && indent > 2) {
+        continue
+      } else {
+        opaqueDescendant = true
+        continue
+      }
+    }
+
+    if (indent > directIndent) {
+      if (!nestedMappingOpen) opaqueDescendant = true
+      continue
+    }
+    if (indent < directIndent || trimmed.startsWith('-')) {
+      opaqueDescendant = true
+      continue
+    }
+    nestedMappingOpen = mappingValueAtIndent(line, directIndent)?.trim() === ''
+    const value = propertyValue(line, directIndent, false, 'id')
+    if (value !== null) idFields.push({ index: i, scalar: parseSafeScalar(value) })
   }
-  const indent = ' '.repeat(childIndent)
-  const rowInlineComment = /^-\s+id:\s*\S+(\s+#.*)?\s*$/.exec(lines[start]!)?.[1] ?? ''
-  const prefix = new RegExp(`^${indent}disabled:`)
+  return { start, end, directIndent, transparent: transparent && !opaqueDescendant, idFields }
+}
+
+/** Locate one exact top-level override row without ever traversing `insert:`. */
+function locateTargetRow(lines: readonly string[], id: string): TargetRow | null {
+  const matches: RowShape[] = []
+  for (let i = 0; i < lines.length; i += 1) {
+    if (!isTopLevelItem(lines[i]!)) continue
+    const shape = rowShape(lines, i)
+    if (!shape.transparent) {
+      throw new PatchError(`builtin-toggles: ambiguous top-level id near line ${i + 1}; refusing to guess`)
+    }
+    for (const field of shape.idFields) {
+      if (field.scalar.status === 'ambiguous') {
+        throw new PatchError(`builtin-toggles: ambiguous top-level id near line ${field.index + 1}; refusing to guess`)
+      }
+      if (field.scalar.value === id) matches.push(shape)
+    }
+  }
+  const uniqueMatches = [...new Set(matches)]
+  if (uniqueMatches.length > 1 || (uniqueMatches[0]?.idFields.length ?? 0) > 1) {
+    throw new PatchError(`builtin-toggles: duplicate top-level override rows for ${id}; refusing to guess`)
+  }
+  const target = uniqueMatches[0]
+  if (target === undefined) return null
+  const { start, end, directIndent } = target
+  const indent = ' '.repeat(directIndent ?? 2)
+  const rowInlineComment = /^-\s+(?:id|'id'|"id"):\s*(?:\S+|'(?:''|[^'])*'|"(?:[^"\\]|\\.)*")(\s+#.*)?\s*$/.exec(lines[start]!)?.[1] ?? ''
   let disabledIndex = -1
   let disabledValue: boolean | null = null
   let disabledSuffix = ''
   for (let i = start + 1; i < end; i += 1) {
     const line = lines[i]!
-    if (!prefix.test(line)) continue
+    if (directIndent === null) continue
+    const rawValue = propertyValue(line, directIndent, false, 'disabled')
+    if (rawValue === null) continue
     if (disabledIndex !== -1) throw new PatchError(`builtin-toggles: duplicate disabled fields for ${id}; refusing to guess`)
     disabledIndex = i
-    const literal = new RegExp(`^${indent}disabled:\\s*(true|false)(\\s*(?:#.*)?)?$`).exec(line)
+    const literal = new RegExp(`^${indent}(?:disabled|'disabled'|"disabled"):\\s*(true|false)(\\s*(?:#.*)?)?$`).exec(line)
     if (literal === null) throw new PatchError(`builtin-toggles: ${id} has a non-literal disabled override; refusing to rewrite it`)
     disabledValue = literal[1] === 'true'
     disabledSuffix = literal[2] ?? ''
@@ -178,6 +304,8 @@ export function inspectProfileOverride(content: string, id: string): ProfileOver
         ? 'duplicate_top_level_row'
         : message.includes('duplicate disabled')
           ? 'duplicate_disabled_field'
+          : message.includes('ambiguous top-level id')
+            ? 'ambiguous_top_level_id'
           : 'non_literal_disabled',
     }
   }
@@ -189,14 +317,10 @@ export function inspectProfileOverride(content: string, id: string): ProfileOver
  * writer lock and repeats all read/render/concurrency checks at commit time.
  */
 export function preflightProfileMutation(file: string, id: string): ProfileMutationPreflight {
-  let content: string
-  try {
-    content = readFileSync(file, 'utf8')
-    statSync(file)
-  } catch (error) {
-    const code = error && typeof error === 'object' && 'code' in error ? error.code : undefined
-    return { status: 'unwritable', reason: code === 'ENOENT' ? 'profile_patch_missing' : 'profile_patch_unreadable' }
-  }
+  return inspectProfileSnapshot(file, [id]).profilePersistence.get(id)!
+}
+
+function preflightContent(content: string, id: string): ProfileMutationPreflight {
   try {
     locateTargetRow(content.length === 0 ? [] : content.split(/\r?\n/), id)
     return { status: 'writable' }
@@ -204,8 +328,33 @@ export function preflightProfileMutation(file: string, id: string): ProfileMutat
     const message = error instanceof Error ? error.message : ''
     if (message.includes('duplicate top-level')) return { status: 'unwritable', reason: 'duplicate_top_level_row' }
     if (message.includes('duplicate disabled')) return { status: 'unwritable', reason: 'duplicate_disabled_field' }
+    if (message.includes('ambiguous top-level id')) return { status: 'unwritable', reason: 'ambiguous_top_level_id' }
     return { status: 'unwritable', reason: 'non_literal_disabled' }
   }
+}
+
+/** Read one regular profile file once, then derive every target state purely. */
+export function inspectProfileSnapshot(file: string, ids: readonly string[]): ProfileInspectionSnapshot {
+  const profileOverrides = new Map<string, ProfileOverrideInspection>()
+  const profilePersistence = new Map<string, ProfileMutationPreflight>()
+  let content: string
+  try {
+    const stat = lstatSync(file)
+    if (stat.isSymbolicLink() || !stat.isFile()) throw new PatchError('profile patch is not a regular file')
+    content = readFileSync(file, 'utf8')
+  } catch (error) {
+    const code = error && typeof error === 'object' && 'code' in error ? error.code : undefined
+    for (const id of ids) {
+      profileOverrides.set(id, code === 'ENOENT' ? { state: 'inherited' } : { state: 'unavailable', reason: 'profile_unavailable' })
+      profilePersistence.set(id, { status: 'unwritable', reason: code === 'ENOENT' ? 'profile_patch_missing' : 'profile_patch_unreadable' })
+    }
+    return { profileOverrides, profilePersistence }
+  }
+  for (const id of ids) {
+    profileOverrides.set(id, inspectProfileOverride(content, id))
+    profilePersistence.set(id, preflightContent(content, id))
+  }
+  return { profileOverrides, profilePersistence }
 }
 
 /**
@@ -228,7 +377,8 @@ export function renderDisabledPatch(content: string, id: string, disabled: boole
       // Preserve an inline explanation exactly; generic YAML output would not.
       lines[target.disabledIndex] = `${target.indent}disabled: ${value}${target.disabledSuffix}`
     } else {
-      lines.splice(target.end, 0, `${target.indent}disabled: ${value}`)
+      const insertAt = target.end === lines.length && lines[lines.length - 1] === '' ? target.end - 1 : target.end
+      lines.splice(insertAt, 0, `${target.indent}disabled: ${value}`)
     }
     return { content: lines.join(eol), changed: true, createdRow: false }
   }
@@ -330,12 +480,36 @@ export interface ApplyDeps {
   writeAtomic: (file: string, content: string, mode: number) => Promise<void>
   /** Hold the cross-process writer lock for `file` around one operation. */
   lock: <T>(file: string, operation: () => Promise<T>) => Promise<T>
+  /** lstat-style metadata used to reject links and non-regular files. */
+  stat?: (file: string) => { mode: number; dev: number; ino: number; isFile: () => boolean; isSymbolicLink: () => boolean }
 }
 
 const realDeps: ApplyDeps = {
   read: (file) => readFileSync(file, 'utf8'),
   writeAtomic: (file, content, mode) => writeFileAtomic(file, content, { mode }),
   lock: withFileLock,
+  stat: lstatSync,
+}
+
+type FileIdentity = { mode: number; dev: number; ino: number }
+type PatchStat = { mode: number; dev: number; ino: number; isFile: () => boolean; isSymbolicLink: () => boolean }
+
+function regularFileIdentity(file: string, deps: ApplyDeps): FileIdentity {
+  let stat: PatchStat
+  try { stat = (deps.stat ?? lstatSync)(file) } catch (error) {
+    const code = error && typeof error === 'object' && 'code' in error ? error.code : undefined
+    throw new PatchError(code === 'ENOENT'
+      ? `builtin-toggles: profile patch missing: ${file}; refusing to create it implicitly`
+      : `builtin-toggles: cannot inspect profile patch: ${file}`)
+  }
+  if (stat.isSymbolicLink() || !stat.isFile()) {
+    throw new PatchError(`builtin-toggles: profile patch must be a regular non-symlink file: ${file}`)
+  }
+  return { mode: stat.mode & 0o777, dev: stat.dev, ino: stat.ino }
+}
+
+function sameFile(left: FileIdentity, right: FileIdentity): boolean {
+  return left.dev === right.dev && left.ino === right.ino && left.mode === right.mode
 }
 
 /**
@@ -370,15 +544,13 @@ async function applyProfilePatch(
   render: (content: string) => RenderResult,
   deps: ApplyDeps,
 ): Promise<{ changed: boolean; createdRow: boolean }> {
-  if (!existsSync(file)) {
-    throw new PatchError(`builtin-toggles: profile patch missing: ${file}; refusing to create it implicitly`)
-  }
-  // The lock's sibling (<file>.lock) lives next to the target, so the parent
-  // directory must exist — it does (the file exists). Preserve the existing
-  // file mode through the atomic replace.
-  const mode = statSync(file).mode & 0o777
+  // Reject bad path types before attempting the sibling lock. The same check
+  // is deliberately repeated after acquiring it and immediately before write.
+  regularFileIdentity(file, deps)
   return deps.lock(file, async () => {
+    const before = regularFileIdentity(file, deps)
     const original = deps.read(file)
+    if (!sameFile(before, regularFileIdentity(file, deps))) throw new ConcurrentEditError(file)
     const rendered = render(original)
     if (!rendered.changed) return { changed: false, createdRow: false }
     // Optimistic concurrency: refuse (not overwrite) an external edit that
@@ -387,7 +559,9 @@ async function applyProfilePatch(
     if (current !== original) {
       throw new ConcurrentEditError(file)
     }
-    await deps.writeAtomic(file, rendered.content, mode)
+    const final = regularFileIdentity(file, deps)
+    if (!sameFile(before, final)) throw new ConcurrentEditError(file)
+    await deps.writeAtomic(file, rendered.content, final.mode)
     return { changed: true, createdRow: rendered.createdRow }
   })
 }

@@ -1,14 +1,12 @@
-# dsh-builtin-toggles
+# dsh-builtin-toggles — Verified Built-in Capability Inspector
 
-DeepSeek Harness Web 的官方内置插件目录与安全开关。
+DeepSeek Harness Web 的已审阅内置 capability 检查器与极小、fail-closed 的安全开关面。
 
 > 非官方社区插件（unofficial community plugin）。与 DeepSeek Harness 官方无关，不受官方支持。
 
 [![Awesome DSH Plugin](https://awesome-dsh-plugin.com/badge.svg)](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin)
 
-![dsh-builtin-toggles 内置插件目录](docs/assets/builtin-catalog-zh.png)
-
-DSH Web 由大量官方内置插件（built-in entries）组成，但原始的 Loader id / package 名很难让普通用户判断每个插件是干什么的、当前是什么状态、为什么有些能关、有些不能。本插件在 **设置 → 插件 → 内置插件** 提供一个面向中文用户的内置插件目录与安全开关。
+DSH Web 由大量官方内置插件组成。本插件在 **设置 → 插件 → 内置开关** 显示服务端生成的 capability inspection：已审阅事实、profile override、可持久化性、兼容性和 mutation eligibility 都由 Host 计算。旧版 catalog 截图不再代表当前 Inspector，因此不作为产品证据保留。
 
 ## 安装
 
@@ -38,7 +36,7 @@ inspector 只消费服务端 v1 inspection DTO；类别、审核信息、兼容�
 
 ## 兼容性
 
-- Tested with DSH 0.1.0-rc.6（隔离 DSH_HOME + headless Chromium 真实浏览器验证）。
+- Reviewed/tested baseline: published `@deepseek-ai/dsh-base@0.1.0-rc.6` 与 `@deepseek-ai/dsh-web-app@0.1.0-rc.6`。这不是 `>= rc.6` 的承诺；当前公开 npm 版本仅由 scheduled workflow 观察，不会自动成为 supported。
 - 开关的运行时效果是 Host 侧**立即生效**；已打开的浏览器页面需要**刷新后**才应用 client-side 改变（rc.6 行为），切换成功后面板会提示“刷新页面后生效”。
 - 持久化写入 profile 的 `cordis.patch.yml`，重启后保持。
 - inspection compatibility 与 mutation eligibility 是不同概念；除完整 rc.6 发布补丁结构外，`verified` 仍需要 Host 公开运行时身份。当前 DSH 没有向插件公开该稳定身份，因此真实环境会诚实标为 `unverified`，不会仅凭版本号或相同 Loader 结构声称兼容；但逐条 mutation 仍必须通过独立的 reviewed-leaf、结构漂移与 writer 安全检查。
@@ -49,7 +47,7 @@ inspector 只消费服务端 v1 inspection DTO；类别、审核信息、兼容�
 dsh plugin --profile web remove dsh-builtin-toggles
 ```
 
-然后重启。本插件写入的 `disabled` override 会保留在 profile patch 中（可手动清理）。
+然后重启。卸载前应在 Inspector 对每个本插件曾 force 的项执行 **恢复继承**，以只删除该顶层 literal `disabled` override。卸载不会擅自删除任意用户 profile 内容，因为那可能属于用户或其他 bundle 的配置。
 
 ## 开发
 
@@ -58,7 +56,10 @@ pnpm install
 pnpm typecheck
 pnpm test
 pnpm build     # tsdown → lib/index.js (node ESM) + lib/client.js (browser bundle)
+pnpm pack:check
 ```
+
+维护 reviewed baseline 和上游观察的限制见 [COMPATIBILITY.md](COMPATIBILITY.md)，安全报告见 [SECURITY.md](SECURITY.md)。
 
 ## 贡献
 

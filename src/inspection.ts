@@ -17,7 +17,7 @@ import {
 } from './evidence.ts'
 import { classifyEntry, OFFICIAL_PACKAGE_PREFIX, type EntryFacts, type LockReason } from './policy.ts'
 import { evaluateMutationEligibility, type MutationEligibility } from './eligibility.ts'
-import type { ProfileMutationPreflight, ProfileOverrideInspection } from './profile-patch.ts'
+import type { ProfileInspectionSnapshot, ProfileMutationPreflight, ProfileOverrideInspection } from './profile-patch.ts'
 
 export const INSPECTION_SCHEMA_VERSION = 'builtin-toggles.inspection/v1'
 export type RuntimeLifecycle = 'inactive' | 'pending' | 'loading' | 'active' | 'failed' | 'unloading' | 'unknown'
@@ -80,9 +80,8 @@ function lifecycleFor(phase: string | null): RuntimeLifecycle {
 /** Build the versioned, presentation-free inspection DTO. */
 export function buildInspectionResponse(
   entries: readonly InspectionRuntimeEntry[],
-  runtimeIdentity: RuntimeCompositionIdentity | null = null,
-  profileOverrides: ReadonlyMap<string, ProfileOverrideInspection> = new Map(),
-  profilePersistence: ReadonlyMap<string, ProfileMutationPreflight> = new Map(),
+  runtimeIdentity: RuntimeCompositionIdentity | null,
+  profile: ProfileInspectionSnapshot,
 ): InspectionResponseV1 {
   const baseline = baselineById()
   const runtimeEvidence: RuntimeEntryEvidence[] = entries.map((entry) => ({
@@ -101,16 +100,17 @@ export function buildInspectionResponse(
   const capabilities = entries.map((entry): InspectedCapability => {
     const reviewed = baseline.get(entry.id)
     const policy = classifyEntry(entry)
-    const writable = profilePersistence.get(entry.id) ?? { status: 'writable' as const }
+    // A caller that failed to provide profile provenance must never turn an
+    // inspection row writable or infer a patch override from effective state.
+    const override = profile.profileOverrides.get(entry.id) ?? { state: 'unavailable' as const, reason: 'profile_unavailable' as const }
+    const writable = profile.profilePersistence.get(entry.id) ?? { status: 'unwritable' as const, reason: 'profile_patch_unreadable' as const }
     return {
       id: entry.id,
       packageName: entry.name,
       official: entry.name.startsWith(OFFICIAL_PACKAGE_PREFIX),
       runtimeState: { disabled: entry.disabled, lifecycle: lifecycleFor(entry.phase) },
       configuration: {
-        profileOverride: profileOverrides.get(entry.id) ?? {
-          state: entry.ownDisabled === true ? 'explicitly-disabled' : entry.ownDisabled === false ? 'explicitly-enabled' : 'inherited',
-        },
+        profileOverride: override,
         profilePersistence: writable,
         effectiveDisabled: entry.disabled,
         agentPresetManaged: reviewed?.managementPlane === 'agent-preset',
@@ -118,7 +118,9 @@ export function buildInspectionResponse(
       managementPlane: reviewed?.managementPlane ?? unknownPlane(),
       category: reviewed?.category ?? unknownCategory(),
       policy: policy.manageable ? { status: 'manageable' } : { status: 'locked', reason: policy.reason },
-      verification: findingCodesById.get(entry.id) ?? (reviewed === undefined || !identityVerified ? 'unverified' : 'verified'),
+      verification: findingCodesById.get(entry.id) ?? (
+        reviewed === undefined ? 'unverified' : !identityVerified ? 'unverified' : 'verified'
+      ),
       mutationEligibility: evaluateMutationEligibility(entry.id, runtimeEvidence, REVIEWED_DSH_WEB_BASELINE, compatibility, writable),
       baseline: {
         reviewed: reviewed !== undefined,

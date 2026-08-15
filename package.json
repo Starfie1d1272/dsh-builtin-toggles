@@ -1,7 +1,7 @@
 {
   "name": "dsh-builtin-toggles",
-  "version": "0.2.0",
-  "description": "Built-in plugin catalog and safe GUI toggles for DeepSeek Harness Web.",
+  "version": "0.3.0",
+  "description": "Fail-closed built-in capability inspector for DeepSeek Harness Web.",
   "type": "module",
   "license": "MIT",
   "keywords": [
@@ -44,7 +44,9 @@
   "scripts": {
     "build": "tsdown",
     "typecheck": "tsc --noEmit",
-    "test": "node --expose-internals --import tsx --test tests/*.spec.ts"
+    "test": "node --expose-internals --import tsx --test tests/*.spec.ts",
+    "verify:baseline": "tsx scripts/verify-reviewed-baseline.ts",
+    "pack:check": "node scripts/check-package.mjs"
   },
   "dsh": {
     "bundle": {
@@ -64,7 +66,7 @@
     "react": "^18.2.0"
   },
   "dependencies": {
-    "@deepseek-ai/dsh-atomic-write": "^0.1.0-rc.6"
+    "@deepseek-ai/dsh-atomic-write": "0.1.0-rc.6"
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "^4.0.1",

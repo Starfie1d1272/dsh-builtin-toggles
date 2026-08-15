@@ -4,6 +4,7 @@ import { evaluateCompatibility, type RuntimeCompositionIdentity, type RuntimeEnt
 import { REVIEWED_DSH_WEB_BASELINE, type ReviewedCapabilityBaseline } from '../src/evidence.ts'
 import { buildInspectionResponse, INSPECTION_SCHEMA_VERSION, type InspectionRuntimeEntry } from '../src/inspection.ts'
 import { MANAGEABLE_IDS } from '../src/policy.ts'
+import type { ProfileInspectionSnapshot, ProfileMutationPreflight, ProfileOverrideInspection } from '../src/profile-patch.ts'
 
 const oneBaseline: readonly ReviewedCapabilityBaseline[] = [{
   id: 'ui-goal',
@@ -29,6 +30,13 @@ function inspected(overrides: Partial<InspectionRuntimeEntry> = {}): InspectionR
   return {
     id: 'ui-goal', name: '@deepseek-ai/dsh-client-ui-goal', disabled: false, phase: 'active',
     declaredInject: null, declaredInjectKnown: true, ownDisabled: undefined, ...overrides,
+  }
+}
+
+function profile(ids: readonly string[], overrides = new Map<string, ProfileOverrideInspection>(), persistence = new Map<string, ProfileMutationPreflight>()): ProfileInspectionSnapshot {
+  return {
+    profileOverrides: new Map(ids.map((id) => [id, overrides.get(id) ?? { state: 'inherited' as const }])),
+    profilePersistence: new Map(ids.map((id) => [id, persistence.get(id) ?? { status: 'writable' as const }])),
   }
 }
 
@@ -64,25 +72,78 @@ describe('compatibility evaluation', () => {
     }])
   })
 
-  it('does not verify a non-rc.6 release even when the structure temporarily matches', () => {
+  it('marks a trustworthy non-rc.6 runtime identity as drift even when structure temporarily matches', () => {
     const result = evaluateCompatibility([runtime()], oneBaseline, {
       kind: 'dsh-release', value: '@deepseek-ai/dsh@0.1.0-rc.7', source: 'host-runtime-metadata',
     })
-    assert.equal(result.status, 'unverified')
+    assert.equal(result.status, 'drifted')
     assert.equal(result.runtimeIdentity.status, 'mismatched')
     assert.equal(result.findings[0]?.code, 'runtime_release_identity_mismatch')
+    // Composition mismatch is not counted as a fake entry-level difference.
+    assert.deepEqual({ verified: result.verifiedCount, drifted: result.driftedCount, unverified: result.unverifiedCount }, { verified: 0, drifted: 0, unverified: 1 })
   })
 
-  it('keeps the summary unverified when release identity is unavailable even if structure differs', () => {
+  it('marks directly observed structural drift even when release identity is unavailable', () => {
     const result = evaluateCompatibility([runtime({ packageName: '@deepseek-ai/dsh-client-ui-goal-v2' })], oneBaseline)
-    assert.equal(result.status, 'unverified')
+    assert.equal(result.status, 'drifted')
     assert.ok(result.findings.some((finding) => finding.code === 'package_identity_changed'))
+    assert.deepEqual({ verified: result.verifiedCount, drifted: result.driftedCount, unverified: result.unverifiedCount }, { verified: 0, drifted: 1, unverified: 0 })
   })
 
   it('keeps a new official entry inspectable but marks the composition drifted', () => {
     const result = evaluateCompatibility([runtime(), runtime({ id: 'ui-future', packageName: '@deepseek-ai/dsh-client-ui-future' })], oneBaseline, reviewedRc6Identity)
     assert.equal(result.status, 'drifted')
     assert.deepEqual(result.findings[0], { scope: 'entry', code: 'new_official_entry', id: 'ui-future', observed: '@deepseek-ai/dsh-client-ui-future' })
+  })
+
+  function rc6Augmentations(variant: 'browse' | 'native' = 'browse', ids = ['opaque-host', 'opaque-client', 'opaque-hmr']): RuntimeEntryEvidence[] {
+    return [
+      runtime({ id: ids[0]!, packageName: `@deepseek-ai/dsh-host-directory-picker-${variant}` }),
+      runtime({ id: ids[1]!, packageName: `@deepseek-ai/dsh-client-ui-directory-picker-${variant}` }),
+      runtime({ id: ids[2]!, packageName: '@deepseek-ai/cordis-plugin-hmr' }),
+    ]
+  }
+
+  it('accepts reviewed rc.6 augmentation shape with arbitrary opaque Loader ids', () => {
+    for (const entries of [
+      [runtime(), ...rc6Augmentations('browse', ['random-a', 'random-b', 'random-c'])],
+      [runtime(), ...rc6Augmentations('native', ['different-a', 'different-b', 'different-c'])],
+      [runtime(), ...rc6Augmentations('browse', ['fresh-a', 'fresh-b', 'unused-hmr']).slice(0, 2)],
+    ]) {
+      const result = evaluateCompatibility(entries, oneBaseline, reviewedRc6Identity)
+      assert.equal(result.status, 'verified')
+      assert.deepEqual(result.findings, [])
+    }
+  })
+
+  it('drifts on duplicate, missing, extra, or platform-inconsistent augmentation shape', () => {
+    const cases = [
+      [runtime(), ...rc6Augmentations(), runtime({ id: 'another-hmr', packageName: '@deepseek-ai/cordis-plugin-hmr' })],
+      [runtime(), ...rc6Augmentations().filter((_, index) => index !== 1)],
+      [runtime(), ...rc6Augmentations(), runtime({ id: 'another-host', packageName: '@deepseek-ai/dsh-host-directory-picker-browse' })],
+      [runtime(), ...rc6Augmentations('browse').slice(0, 1), ...rc6Augmentations('native').slice(1)],
+    ]
+    for (const entries of cases) {
+      const result = evaluateCompatibility(entries, oneBaseline, reviewedRc6Identity)
+      assert.equal(result.status, 'drifted')
+      assert.ok(result.findings.some((finding) => finding.code === 'runtime_augmentation_shape_changed'))
+    }
+  })
+
+  it('keeps unknown official packages and baseline-id collisions fail closed', () => {
+    const unknown = evaluateCompatibility([
+      runtime(), ...rc6Augmentations(),
+      runtime({ id: 'ui-future', packageName: '@deepseek-ai/dsh-client-ui-future' }),
+    ], oneBaseline, reviewedRc6Identity)
+    assert.ok(unknown.findings.some((finding) => finding.code === 'new_official_entry'))
+
+    const collision = evaluateCompatibility([
+      runtime(),
+      runtime({ id: 'ui-goal', packageName: '@deepseek-ai/dsh-host-directory-picker-browse' }),
+      ...rc6Augmentations(),
+    ], oneBaseline, reviewedRc6Identity)
+    assert.equal(collision.status, 'drifted')
+    assert.ok(collision.findings.some((finding) => finding.code === 'runtime_augmentation_id_conflicts_baseline'))
   })
 
   it('detects an expected entry missing', () => {
@@ -151,11 +212,12 @@ describe('reviewed baseline invariants', () => {
 
 describe('inspection API v1 DTO', () => {
   it('is versioned, semantic, and includes unknown entries without granting a mutation authority', () => {
-    const response = buildInspectionResponse([
+    const entries = [
       inspected(),
       inspected({ id: 'ui-future', name: '@deepseek-ai/dsh-client-ui-future', phase: null }),
       inspected({ id: 'third-party', name: '@example/plugin', disabled: true, phase: 'failed' }),
-    ])
+    ]
+    const response = buildInspectionResponse(entries, null, profile(entries.map((entry) => entry.id)))
     assert.equal(response.schemaVersion, INSPECTION_SCHEMA_VERSION)
     assert.deepEqual(response.host, { plugin: 'builtin-toggles', profile: 'web' })
     assert.equal(response.inventory.totalEntries, 3)
@@ -180,13 +242,14 @@ describe('inspection API v1 DTO', () => {
   })
 
   it('reports an explicit profile override separately from effective runtime and Agent Preset ownership', () => {
-    const response = buildInspectionResponse([
+    const entries = [
       inspected({ disabled: true, ownDisabled: true }),
       inspected({ id: 'plan-mode', name: '@deepseek-ai/dsh-plan-mode', ownDisabled: false }),
-    ], null, new Map([
+    ]
+    const response = buildInspectionResponse(entries, null, profile(entries.map((entry) => entry.id), new Map([
       ['ui-goal', { state: 'explicitly-disabled' as const }],
       ['plan-mode', { state: 'explicitly-enabled' as const }],
-    ]))
+    ])))
     const goal = response.capabilities.find((entry) => entry.id === 'ui-goal')!
     const plan = response.capabilities.find((entry) => entry.id === 'plan-mode')!
     assert.equal(goal.configuration.profileOverride.state, 'explicitly-disabled')
@@ -195,18 +258,34 @@ describe('inspection API v1 DTO', () => {
     assert.equal(plan.configuration.agentPresetManaged, true)
   })
 
-  it('reports an unwritable profile patch as eligibility evidence without changing inherited semantics', () => {
-    const response = buildInspectionResponse(
-      reviewedRc6RuntimeFixture().map((entry) => inspected({ id: entry.id, name: entry.packageName })),
-      null,
-      new Map([['ui-goal', { state: 'inherited' as const }]]),
-      new Map([['ui-goal', { status: 'unwritable' as const, reason: 'non_literal_disabled' as const }]]),
+  it('projects a composition identity mismatch as global drift but leaves structurally matching entries unverified', () => {
+    const entries = reviewedRc6RuntimeFixture().map((entry) => inspected({ id: entry.id, name: entry.packageName, declaredInject: entry.declaredInject }))
+    const response = buildInspectionResponse(entries, {
+      kind: 'dsh-release', value: '@deepseek-ai/dsh@0.1.0-rc.7', source: 'host-runtime-metadata',
+    }, profile(entries.map((entry) => entry.id)))
+    assert.equal(response.compatibility.status, 'drifted')
+    assert.deepEqual(
+      { verified: response.compatibility.verifiedCount, drifted: response.compatibility.driftedCount, unverified: response.compatibility.unverifiedCount },
+      { verified: 0, drifted: 0, unverified: REVIEWED_DSH_WEB_BASELINE.length },
     )
+    assert.equal(response.capabilities.find((entry) => entry.id === 'ui-goal')?.verification, 'unverified')
+  })
+
+  it('reports an unwritable profile patch as eligibility evidence without changing inherited semantics', () => {
+    const entries = reviewedRc6RuntimeFixture().map((entry) => inspected({ id: entry.id, name: entry.packageName }))
+    const response = buildInspectionResponse(entries, null, profile(entries.map((entry) => entry.id), new Map([['ui-goal', { state: 'inherited' as const }]]), new Map([['ui-goal', { status: 'unwritable' as const, reason: 'non_literal_disabled' as const }]])))
     const goal = response.capabilities.find((entry) => entry.id === 'ui-goal')!
     assert.deepEqual(goal.configuration.profileOverride, { state: 'inherited' })
     assert.deepEqual(goal.configuration.profilePersistence, { status: 'unwritable', reason: 'non_literal_disabled' })
     assert.equal(goal.mutationEligibility.status, 'ineligible')
     assert.ok(goal.mutationEligibility.reasons.includes('profile_not_persistable'))
+  })
+
+  it('fails closed when a caller supplies no provenance for a runtime row', () => {
+    const response = buildInspectionResponse([inspected()], null, { profileOverrides: new Map(), profilePersistence: new Map() })
+    assert.deepEqual(response.capabilities[0]?.configuration.profileOverride, { state: 'unavailable', reason: 'profile_unavailable' })
+    assert.deepEqual(response.capabilities[0]?.configuration.profilePersistence, { status: 'unwritable', reason: 'profile_patch_unreadable' })
+    assert.equal(response.capabilities[0]?.mutationEligibility.status, 'ineligible')
   })
 
   it('exposes reviewed evidence independently from the existing policy projection', () => {

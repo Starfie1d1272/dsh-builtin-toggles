@@ -19,14 +19,13 @@
  */
 
 import type { IncomingMessage, ServerResponse } from 'node:http'
-import { existsSync, readFileSync } from 'node:fs'
 import type { Context } from '@deepseek-ai/cordis'
 import type { Entry } from '@deepseek-ai/cordis-plugin-loader'
 import type {} from '@deepseek-ai/dsh-host-webserver'
 import { runToggle, type EntryHandle } from './mutate.ts'
 import { buildInspectionResponse, type InspectionRuntimeEntry } from './inspection.ts'
 import { classifyEntry, type EntryFacts, type SnapshotPlugin } from './policy.ts'
-import { applyDisabledOverride, inspectProfileOverride, preflightProfileMutation, profilePatchPath, restoreDisabledInheritance, type ProfileMutationPreflight, type ProfileOverrideInspection } from './profile-patch.ts'
+import { applyDisabledOverride, inspectProfileSnapshot, preflightProfileMutation, profilePatchPath, restoreDisabledInheritance } from './profile-patch.ts'
 import { isTrustedRequest } from './trust.ts'
 
 /** Cordis plugin identity. */
@@ -179,32 +178,6 @@ function entryHandle(entry: Entry): EntryHandle {
   }
 }
 
-function profileOverrideSnapshot(entries: readonly InspectionRuntimeEntry[]): ReadonlyMap<string, ProfileOverrideInspection> {
-  const states = new Map<string, ProfileOverrideInspection>()
-  const file = profilePatchPath('web')
-  if (!existsSync(file)) {
-    for (const entry of entries) states.set(entry.id, { state: 'inherited' })
-    return states
-  }
-  try {
-    const content = readFileSync(file, 'utf8')
-    for (const entry of entries) states.set(entry.id, inspectProfileOverride(content, entry.id))
-  } catch {
-    // Inspection remains read-only and useful when the profile has not yet
-    // been created. Mutation will separately refuse to create it implicitly.
-    for (const entry of entries) states.set(entry.id, { state: 'unavailable', reason: 'profile_unavailable' })
-  }
-  return states
-}
-
-/** Same read-only writer gate used by POST before any Loader update. */
-function profilePersistenceSnapshot(entries: readonly InspectionRuntimeEntry[]): ReadonlyMap<string, ProfileMutationPreflight> {
-  const states = new Map<string, ProfileMutationPreflight>()
-  const file = profilePatchPath('web')
-  for (const entry of entries) states.set(entry.id, preflightProfileMutation(file, entry.id))
-  return states
-}
-
 /** Register the same-origin API; runs for the lifetime of the fiber. */
 export function apply(ctx: Context): void {
   ctx.effect(() => {
@@ -235,12 +208,11 @@ export function apply(ctx: Context): void {
           // Host release identity. Do not infer one from module resolution,
           // process paths, or private Loader fields: no identity means the
           // read-only API must remain unverified.
-          sendJson(res, 200, buildInspectionResponse(
-            entries,
-            null,
-            profileOverrideSnapshot(entries),
-            profilePersistenceSnapshot(entries),
-          ))
+          // One lstat + one read produce a coherent GET observation. It is
+          // presentation data only; POST always repeats a fresh preflight and
+          // the writer repeats its final checks under the lock.
+          const profile = inspectProfileSnapshot(profilePatchPath('web'), entries.map((entry) => entry.id))
+          sendJson(res, 200, buildInspectionResponse(entries, null, profile))
           return
         }
 
