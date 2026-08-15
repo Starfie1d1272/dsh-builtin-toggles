@@ -108,6 +108,7 @@ describe('compatibility evaluation', () => {
     for (const entries of [
       [runtime(), ...rc6Augmentations('browse', ['random-a', 'random-b', 'random-c'])],
       [runtime(), ...rc6Augmentations('native', ['different-a', 'different-b', 'different-c'])],
+      [runtime(), ...rc6Augmentations('browse', ['fresh-a', 'fresh-b', 'unused-hmr']).slice(0, 2)],
     ]) {
       const result = evaluateCompatibility(entries, oneBaseline, reviewedRc6Identity)
       assert.equal(result.status, 'verified')
@@ -117,8 +118,9 @@ describe('compatibility evaluation', () => {
 
   it('drifts on duplicate, missing, extra, or platform-inconsistent augmentation shape', () => {
     const cases = [
+      [runtime(), ...rc6Augmentations(), runtime({ id: 'another-hmr', packageName: '@deepseek-ai/cordis-plugin-hmr' })],
+      [runtime(), ...rc6Augmentations().filter((_, index) => index !== 1)],
       [runtime(), ...rc6Augmentations(), runtime({ id: 'another-host', packageName: '@deepseek-ai/dsh-host-directory-picker-browse' })],
-      [runtime(), ...rc6Augmentations().slice(0, 2)],
       [runtime(), ...rc6Augmentations('browse').slice(0, 1), ...rc6Augmentations('native').slice(1)],
     ]
     for (const entries of cases) {

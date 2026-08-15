@@ -22,7 +22,8 @@ export interface RuntimeEntryEvidence {
  * composition has loaded. Loader generates their ids, so those ids are not
  * release evidence. The reviewed evidence is instead the strict runtime shape:
  * one host/client directory-picker pair using the same platform variant and
- * one HMR helper. They are not published patch-baseline rows and remain locked.
+ * zero or one HMR helper. They are not published patch-baseline rows and remain
+ * locked.
  */
 type RuntimeAugmentationRole = 'host-directory-picker' | 'client-directory-picker' | 'hmr'
 type DirectoryPickerVariant = 'browse' | 'native'
@@ -202,11 +203,13 @@ export function evaluateCompatibility(
     for (const [role, entries] of [
       ['host-directory-picker', host],
       ['client-directory-picker', client],
-      ['hmr', hmr],
     ] as const) {
       if (entries.length !== 1) {
         reportAugmentationShape(`rc6-runtime-augmentation-${role}`, `exactly one ${role} helper`, entries.map(({ entry }) => entry.packageName))
       }
+    }
+    if (hmr.length > 1) {
+      reportAugmentationShape('rc6-runtime-augmentation-hmr', 'zero or one hmr helper', hmr.map(({ entry }) => entry.packageName))
     }
     if (host.length === 1 && client.length === 1 && host[0]!.evidence.variant !== client[0]!.evidence.variant) {
       reportAugmentationShape(

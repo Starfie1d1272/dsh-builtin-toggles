@@ -59,10 +59,10 @@ Cordis injection resolution.
 
 The reviewed rc.6 runtime also creates three Loader augmentations that are not
 rows in either published patch: one host directory picker, one matching client
-directory picker, and one HMR helper. Their generated Loader ids are opaque and
+directory picker, and zero or one HMR helper. Their generated Loader ids are opaque and
 are not stable release or Host identity evidence. Instead, the compatibility
 check requires the exact reviewed package identities, cardinality one for each
-role, matching `browse` or `native` host/client variants, no baseline-id
+picker role and at most one HMR helper, matching `browse` or `native` host/client variants, no baseline-id
 collision, and (when Loader exposes it) no declared row-level `inject` value.
 Both platform variants were observed in reviewed rc.6 runs. Duplicate, extra,
 missing, variant-inconsistent, conflicting, and unknown official entries still
