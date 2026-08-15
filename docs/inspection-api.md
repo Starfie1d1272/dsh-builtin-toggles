@@ -28,13 +28,11 @@ augmentations of a running session, never release evidence: they neither
 satisfy nor violate the reviewed Host baseline, never produce
 `new_official_entry`, and are always `verification: "unverified"`. The DTO
 locks them at the server before the client sees them — a preset row is always
-`policy.status: "locked"` with reason `"agent-preset"`, always
-`mutationEligibility.status: "ineligible"` with reason `"agent_preset_scope"`,
-and its `profileOverride`/`profilePersistence` are `"not-applicable"` (the Web
-profile does not govern it, and the `not-applicable` presentation values are
-never anomalies). A preset row can never borrow an allowlisted Host row's
-policy, eligibility, or profile state, even when it shares the bare id. POST
-and the legacy snapshot only address Host rows.
+`policy.status: "locked"` with reason `"agent-preset"`, and always
+`mutationEligibility.status: "ineligible"` with reason
+`"agent_preset_scope"`. A preset row can never borrow an allowlisted Host
+row's policy, eligibility, or profile state, even when it shares the bare id.
+POST and the legacy snapshot only address Host rows.
 
 `access.mutation` is request-scoped transport access, not capability
 authorization: it is `"allowed"` only for the loopback same-origin fence and
@@ -71,7 +69,21 @@ from Loader lifecycle and `effectiveDisabled`; it describes only the Web
 profile patch's literal top-level `disabled` override. Agent Preset ownership
 is a different management plane and is reported as `agentPresetManaged`, not
 mislabelled as a profile override. A malformed/ambiguous profile override is
-shown as `unavailable` and is never writable.
+shown as `unavailable` and is never writable. The state and `profilePersistence.status`
+value domains are closed and stay as published (the latter is `writable` or
+`unwritable`).
+
+A per-session Agent Preset row is not governed by the Web profile at all. To
+keep the closed value domains intact, such a row conservatively projects
+`profileOverride.state: "unavailable"` and
+`profilePersistence.status: "unwritable"` — fail-closed for consumers that do
+not know about composition scopes — while the additive
+`configuration.profileApplicability` field states the real semantics:
+`"applicable"` for Host/profile rows and `"not-applicable"` for Agent Preset
+rows. `"not-applicable"` is not an anomaly: anomalies-only treats the
+conservative `unavailable`/`unwritable` projection of a `"not-applicable"` row
+as "not governed by the Web profile", and only a genuinely broken profile on
+an `"applicable"` row is an anomaly.
 
 `configuration.profilePersistence` is separate from that state: a missing
 profile patch is still semantically `inherited`, but reports

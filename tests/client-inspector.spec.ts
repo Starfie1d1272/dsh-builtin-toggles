@@ -10,7 +10,7 @@ function capability(overrides: Partial<Capability> = {}): Capability {
     id: 'ui-goal', packageName: '@deepseek-ai/dsh-client-ui-goal', official: true,
     scopeId: 'include:ui-goal', compositionScope: 'host',
     runtimeState: { disabled: false, lifecycle: 'active' },
-    configuration: { profileOverride: { state: 'inherited' }, profilePersistence: { status: 'writable' }, effectiveDisabled: false, agentPresetManaged: false },
+    configuration: { profileOverride: { state: 'inherited' }, profilePersistence: { status: 'writable' }, profileApplicability: 'applicable', effectiveDisabled: false, agentPresetManaged: false },
     managementPlane: 'browser', category: 'presentation', policy: { status: 'manageable' }, verification: 'unverified',
     mutationEligibility: { status: 'eligible', reasons: [], limitations: ['runtime_identity_unavailable'] },
     baseline: { reviewed: true, expectedPackageName: '@deepseek-ai/dsh-client-ui-goal', reviewedReference: { source: 'npm-published-patch', packageName: '@deepseek-ai/dsh-web-app', version: '0.1.0-rc.6', artifact: 'cordis.patch.yml' }, serviceEvidence: [], dependencyEvidence: null, leafReview: 'reviewed-safe-ui-leaf', rationale: null },
@@ -73,15 +73,26 @@ describe('Capability Inspector client model', () => {
       id: 'opaque-host-helper', packageName: '@deepseek-ai/dsh-host-directory-picker-browse', scopeId: 'include:opaque-host-helper',
       baseline: { ...capability().baseline, reviewed: false, expectedPackageName: null }, policy: { status: 'locked', reason: 'unlisted' },
     })
+    // A preset row projects the conservative v1 unavailable/unwritable values;
+    // profileApplicability=not-applicable explains them and keeps them out of
+    // anomalies-only.
     const presetRow = capability({
       id: 'persona', packageName: '@deepseek-ai/dsh-persona', compositionScope: 'agent-preset', scopeId: 'include:agent-presets:persona',
       managementPlane: 'unknown', baseline: { ...capability().baseline, reviewed: false, expectedPackageName: null }, policy: { status: 'locked', reason: 'agent-preset' },
-      configuration: { ...capability().configuration, profileOverride: { state: 'not-applicable' }, profilePersistence: { status: 'not-applicable' } },
+      configuration: { ...capability().configuration, profileOverride: { state: 'unavailable', reason: 'profile_unavailable' }, profilePersistence: { status: 'unwritable', reason: 'profile_patch_unreadable' }, profileApplicability: 'not-applicable' },
     })
     const inspected = snapshot([capability(), augmentation, presetRow])
     assert.equal(capabilityHasAnomaly(inspected.capabilities[1]!, inspected), false)
     assert.equal(capabilityHasAnomaly(inspected.capabilities[2]!, inspected), false)
     assert.deepEqual(filterCapabilities(inspected, { ...EMPTY_FILTERS, anomaliesOnly: true }).map((item) => item.id), [])
+  })
+  it('still treats a genuinely broken Host profile as an anomaly (not-applicable is not a blanket suppression)', () => {
+    const brokenHost = capability({
+      id: 'ui-jobs', configuration: { ...capability().configuration, profileOverride: { state: 'unavailable', reason: 'non_literal_disabled' }, profilePersistence: { status: 'unwritable', reason: 'non_literal_disabled' }, profileApplicability: 'applicable' },
+    })
+    const inspected = snapshot([capability(), brokenHost])
+    assert.equal(capabilityHasAnomaly(inspected.capabilities[1]!, inspected), true)
+    assert.deepEqual(filterCapabilities(inspected, { ...EMPTY_FILTERS, anomaliesOnly: true }).map((item) => item.id), ['ui-jobs'])
   })
   it('keeps a structurally matching reviewed capability out of anomalies-only when only composition identity mismatches', () => {
     const inspected = snapshot([capability({ verification: 'unverified' })])

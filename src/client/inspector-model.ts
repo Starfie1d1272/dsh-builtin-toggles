@@ -22,8 +22,15 @@ export interface Capability {
   compositionScope: CompositionScope
   runtimeState: { disabled: boolean; lifecycle: string }
   configuration: {
-    profileOverride: { state: 'inherited' | 'explicitly-enabled' | 'explicitly-disabled' | 'unavailable' | 'not-applicable'; reason?: string }
-    profilePersistence: { status: 'writable' | 'unwritable' | 'not-applicable'; reason?: string }
+    profileOverride: { state: 'inherited' | 'explicitly-enabled' | 'explicitly-disabled' | 'unavailable'; reason?: string }
+    profilePersistence: { status: 'writable' | 'unwritable'; reason?: string }
+    /**
+     * Additive v1 field: whether the Web profile governs this row.
+     * `not-applicable` marks per-session Agent Preset rows, whose
+     * conservative `profileOverride`/`profilePersistence` values are
+     * "unknown/not writable" rather than "broken".
+     */
+    profileApplicability: 'applicable' | 'not-applicable'
     effectiveDisabled: boolean
     agentPresetManaged: boolean
   }
@@ -85,9 +92,14 @@ export const EMPTY_FILTERS: InspectorFilters = {
  * rows) that have no published baseline row.
  */
 export function capabilityHasAnomaly(capability: Capability, snapshot: InspectionSnapshot): boolean {
+  // A preset row's conservative profile values (`unavailable`/`unwritable`)
+  // are the v1-compatible projection of "the Web profile does not govern this
+  // row", not a broken profile; the additive profileApplicability field says
+  // so, and it must not surface in anomalies-only.
+  const profileNotApplicable = capability.configuration.profileApplicability === 'not-applicable'
   return capability.verification === 'drifted'
-    || capability.configuration.profileOverride.state === 'unavailable'
-    || capability.configuration.profilePersistence.status === 'unwritable'
+    || (!profileNotApplicable && capability.configuration.profileOverride.state === 'unavailable')
+    || (!profileNotApplicable && capability.configuration.profilePersistence.status === 'unwritable')
     || capability.runtimeState.lifecycle === 'failed'
     || snapshot.compatibility.findings.some((finding) => finding.id === capability.id)
 }
@@ -162,7 +174,7 @@ export function availableActions(capability: Capability, snapshot: Pick<Inspecti
   // targets even if a future DTO projection ever slipped. The server is the
   // authority (policy locked + eligibility ineligible at the DTO level).
   if (capability.compositionScope !== 'host') return []
-  if (capability.mutationEligibility.status !== 'eligible' || capability.configuration.profileOverride.state === 'unavailable' || capability.configuration.profileOverride.state === 'not-applicable') return []
+  if (capability.mutationEligibility.status !== 'eligible' || capability.configuration.profileOverride.state === 'unavailable' || capability.configuration.profileApplicability !== 'applicable') return []
   switch (capability.configuration.profileOverride.state) {
     case 'inherited': return ['force-enable', 'force-disable']
     case 'explicitly-enabled': return ['force-disable', 'restore-inheritance']

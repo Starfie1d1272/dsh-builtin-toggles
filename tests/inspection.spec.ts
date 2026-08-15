@@ -262,8 +262,9 @@ describe('scoped composition model (rc.6 Host + Agent Preset)', () => {
     assert.equal(presetRow.verification, 'unverified')
     assert.equal(presetRow.managementPlane, 'agent-preset')
     assert.equal(presetRow.configuration.agentPresetManaged, true)
-    assert.equal(presetRow.configuration.profileOverride.state, 'not-applicable')
-    assert.equal(presetRow.configuration.profilePersistence.status, 'not-applicable')
+    assert.equal(presetRow.configuration.profileOverride.state, 'unavailable')
+    assert.equal(presetRow.configuration.profilePersistence.status, 'unwritable')
+    assert.equal(presetRow.configuration.profileApplicability, 'not-applicable')
     assert.equal(presetRow.mutationEligibility.status, 'ineligible')
     assert.ok(presetRow.mutationEligibility.reasons.includes('agent_preset_scope'))
     const persona = response.capabilities.find((capability) => capability.id === 'persona')!
@@ -290,13 +291,18 @@ describe('scoped composition model (rc.6 Host + Agent Preset)', () => {
     assert.equal(presetRow.policy.reason, 'agent-preset')
     assert.equal(presetRow.mutationEligibility.status, 'ineligible')
     assert.deepEqual(presetRow.mutationEligibility.reasons, ['agent_preset_scope'])
-    assert.deepEqual(presetRow.configuration.profileOverride, { state: 'not-applicable' })
-    assert.deepEqual(presetRow.configuration.profilePersistence, { status: 'not-applicable' })
+    // v1 state/status domains stay closed: the preset row projects the
+    // conservative unavailable/unwritable readings plus the additive
+    // profileApplicability field with the true semantics.
+    assert.deepEqual(presetRow.configuration.profileOverride, { state: 'unavailable', reason: 'profile_unavailable' })
+    assert.deepEqual(presetRow.configuration.profilePersistence, { status: 'unwritable', reason: 'profile_patch_unreadable' })
+    assert.equal(presetRow.configuration.profileApplicability, 'not-applicable')
     assert.equal(presetRow.verification, 'unverified')
     // The Host row of the same id keeps its own manageability projection.
     const hostRow = response.capabilities.find((capability) => capability.id === 'ui-goal' && capability.compositionScope === 'host')!
     assert.equal(hostRow.policy.status, 'manageable')
     assert.equal(hostRow.mutationEligibility.status, 'eligible')
+    assert.equal(hostRow.configuration.profileApplicability, 'applicable')
   })
 
   it('still drifts and fails mutation closed on a genuine same-scope duplicate', () => {
@@ -370,7 +376,7 @@ describe('inspection API v1 DTO', () => {
     assert.equal(response.compatibility.runtimeIdentity.status, 'unavailable')
     assert.deepEqual(response.capabilities[0]?.runtimeState, { disabled: false, lifecycle: 'active' })
     assert.deepEqual(response.capabilities[0]?.configuration, {
-      profileOverride: { state: 'inherited' }, profilePersistence: { status: 'writable' }, effectiveDisabled: false, agentPresetManaged: false,
+      profileOverride: { state: 'inherited' }, profilePersistence: { status: 'writable' }, profileApplicability: 'applicable', effectiveDisabled: false, agentPresetManaged: false,
     })
     // The partial fixture intentionally lacks the rest of the frozen roster,
     // so mutation is refused while read-only inspection remains available.

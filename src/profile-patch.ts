@@ -69,12 +69,7 @@ export interface RenderResult {
 export type ProfileOverrideState = 'inherited' | 'explicitly-enabled' | 'explicitly-disabled'
 
 export interface ProfileOverrideInspection {
-  /**
-   * `not-applicable` is a synthetic presentation value the inspection DTO uses
-   * for rows that are not part of the Web profile at all (per-session Agent
-   * Preset rows). The textual inspector never produces it.
-   */
-  state: ProfileOverrideState | 'unavailable' | 'not-applicable'
+  state: ProfileOverrideState | 'unavailable'
   /** An unavailable state is read-only information, never an authorization. */
   reason?: 'duplicate_top_level_row' | 'duplicate_disabled_field' | 'non_literal_disabled' | 'ambiguous_top_level_id' | 'profile_unavailable'
 }
@@ -83,8 +78,6 @@ export interface ProfileOverrideInspection {
  * Whether the textual writer can conservatively attempt this entry. This is
  * deliberately distinct from `ProfileOverrideInspection`: a missing patch is
  * semantically inherited, but is not a file we are permitted to create.
- * `not-applicable` is the synthetic presentation value for rows outside the
- * Web profile (per-session Agent Preset rows).
  */
 export type ProfileMutationPreflight =
   | { status: 'writable' }
@@ -92,7 +85,6 @@ export type ProfileMutationPreflight =
     status: 'unwritable'
     reason: 'profile_patch_missing' | 'profile_patch_unreadable' | 'duplicate_top_level_row' | 'duplicate_disabled_field' | 'non_literal_disabled' | 'ambiguous_top_level_id'
   }
-  | { status: 'not-applicable' }
 
 /** One coherent, read-only profile observation. It is never write authority. */
 export interface ProfileInspectionSnapshot {

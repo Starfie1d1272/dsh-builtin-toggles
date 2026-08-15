@@ -44,10 +44,24 @@ export interface InspectedCapability {
   compositionScope: CompositionScope
   runtimeState: { disabled: boolean; lifecycle: RuntimeLifecycle }
   configuration: {
-    /** Profile-layer state; this is separate from Loader lifecycle and effective disabled. */
+    /**
+     * Profile-layer state; this is separate from Loader lifecycle and
+     * effective disabled. The value domain is the v1 published one: for a
+     * per-session Agent Preset row the Web profile does not govern the row,
+     * so this conservatively projects `unavailable` (and `profilePersistence`
+     * projects `unwritable`) — fail-closed for older consumers — while the
+     * additive `profileApplicability` field below states the real semantics.
+     */
     profileOverride: ProfileOverrideInspection
     /** Whether the server can conservatively persist a mutation to this profile row. */
     profilePersistence: ProfileMutationPreflight
+    /**
+     * Additive v1 field: whether the Web profile governs this row at all.
+     * `not-applicable` describes per-session Agent Preset rows, whose
+     * conservative `profileOverride`/`profilePersistence` values above are
+     * "unknown/not writable" rather than "broken".
+     */
+    profileApplicability: 'applicable' | 'not-applicable'
     /** The Loader's current effective result, which can differ while a mutation is in flight. */
     effectiveDisabled: boolean
     /** Agent Preset ownership is shown separately and is never a profile override. */
@@ -133,8 +147,14 @@ export function buildInspectionResponse(
       compositionScope: entry.compositionScope,
       runtimeState: { disabled: entry.disabled, lifecycle: lifecycleFor(entry.phase) },
       configuration: {
-        profileOverride: presetRow ? { state: 'not-applicable' as const } : override,
-        profilePersistence: presetRow ? { status: 'not-applicable' as const } : writable,
+        // The v1 state/status value domains stay closed: a preset row
+        // projects the conservative `unavailable`/`unwritable` readings (so a
+        // 0.3.0 consumer still fails closed) and the additive
+        // `profileApplicability` field explains the real "not applicable"
+        // semantics to 0.3.1 consumers.
+        profileOverride: presetRow ? { state: 'unavailable' as const, reason: 'profile_unavailable' as const } : override,
+        profilePersistence: presetRow ? { status: 'unwritable' as const, reason: 'profile_patch_unreadable' as const } : writable,
+        profileApplicability: presetRow ? 'not-applicable' as const : 'applicable' as const,
         effectiveDisabled: entry.disabled,
         agentPresetManaged: reviewed?.managementPlane === 'agent-preset',
       },

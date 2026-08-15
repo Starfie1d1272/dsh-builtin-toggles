@@ -54,8 +54,11 @@ mutation. Per-session Agent Preset rows are runtime augmentations, not Host
 release evidence: they never satisfy or violate the reviewed baseline and are
 not counted as `new_official_entry`. The inspection DTO also locks them at the
 server: a preset row always projects `policy=locked` (reason
-`agent-preset`), `mutationEligibility=ineligible` (reason
-`agent_preset_scope`), and `not-applicable` profile override/persistence, so
-it can never borrow an allowlisted Host row's manageability even when it
-shares the bare id; the client additionally hides controls for non-Host rows
-as defense in depth.
+`agent-preset`) and `mutationEligibility=ineligible` (reason
+`agent_preset_scope`); the client additionally hides controls for non-Host
+rows as defense in depth. The v1 `profileOverride.state` /
+`profilePersistence.status` value domains stay closed: a preset row
+conservatively projects `unavailable`/`unwritable`, and the additive
+`configuration.profileApplicability` field (`"applicable"` /
+`"not-applicable"`) carries the real "not governed by the Web profile"
+semantics, which anomalies-only treats as non-anomalous.

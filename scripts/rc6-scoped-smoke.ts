@@ -179,8 +179,11 @@ for (const row of presetRows) {
   assert.equal(row.policy.reason, 'agent-preset', `preset row ${row.id} lock reason`)
   assert.equal(row.mutationEligibility.status, 'ineligible', `preset row ${row.id} must be ineligible`)
   assert.ok(row.mutationEligibility.reasons.includes('agent_preset_scope'), `preset row ${row.id} reason`)
-  assert.equal(row.configuration.profileOverride.state, 'not-applicable', `preset row ${row.id} profile override must be not-applicable`)
-  assert.equal(row.configuration.profilePersistence.status, 'not-applicable', `preset row ${row.id} persistence must be not-applicable`)
+  // v1 state/status domains stay closed; the additive profileApplicability
+  // field carries the real "not governed by the Web profile" semantics.
+  assert.equal(row.configuration.profileOverride.state, 'unavailable', `preset row ${row.id} conservative override`)
+  assert.equal(row.configuration.profilePersistence.status, 'unwritable', `preset row ${row.id} conservative persistence`)
+  assert.equal(row.configuration.profileApplicability, 'not-applicable', `preset row ${row.id} applicability`)
   assert.ok(row.scopeId.startsWith('include:agent-presets:'), `preset row ${row.id} scopeId ${row.scopeId}`)
 }
 

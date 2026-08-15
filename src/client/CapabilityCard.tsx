@@ -14,7 +14,9 @@ const detail: CSSProperties = { border: 'none', background: 'transparent', color
 
 export function CapabilityCard({ capability, presentation, snapshot, busy, initiallyExpanded, domId, onMutate, t }: { capability: Capability; presentation: CapabilityPresentation; snapshot: InspectionSnapshot; busy: boolean; initiallyExpanded: boolean; domId: string; onMutate: (id: string, action: MutationAction) => void; t: BuiltinTogglesTabProps['t'] }): JSX.Element {
   const [expanded, setExpanded] = useState(initiallyExpanded)
-  const override = capability.configuration.profileOverride.state
+  // A preset row's conservative `unavailable` projection means "not governed
+  // by the Web profile", shown as not-applicable rather than broken.
+  const override = capability.configuration.profileApplicability === 'not-applicable' ? 'not-applicable' : capability.configuration.profileOverride.state
   return <li id={domId} data-capability-id={capability.id} tabIndex={-1} style={card} aria-busy={busy || undefined}>
     <h3 style={title}>{presentation.title}</h3>
     <p style={text}>{capability.id} · {capability.packageName}</p>
