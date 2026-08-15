@@ -16,8 +16,18 @@ DeepSeek Harness Web 的 evidence-backed 内置 capability Inspector；9 个经�
 
 前置：已初始化的 DSH `web` profile。后续公开 DSH 版本可能仍可安装或运行，但除非经过明确 review，不自动成为 supported/reviewed baseline。
 
+已安装 `dsh` CLI：
+
 ```sh
 dsh plugin --profile web add dsh-builtin-toggles
+dsh web
+```
+
+使用 npx（无需全局安装 `dsh`）：
+
+```sh
+npx @deepseek-ai/dsh plugin --profile web add dsh-builtin-toggles
+npx @deepseek-ai/dsh web
 ```
 
 安装后重启 DSH web/gateway，使启动时读取 bundle 层。
@@ -55,8 +65,16 @@ loopback 和显式 trusted host 都能读取 API；所有 configuration mutation
 
 ## 卸载
 
+已安装 `dsh` CLI：
+
 ```sh
 dsh plugin --profile web remove dsh-builtin-toggles
+```
+
+使用 npx：
+
+```sh
+npx @deepseek-ai/dsh plugin --profile web remove dsh-builtin-toggles
 ```
 
 然后重启。插件不会擅自删除用户 profile 内容。
