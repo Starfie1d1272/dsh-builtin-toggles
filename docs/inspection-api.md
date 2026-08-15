@@ -57,17 +57,21 @@ capability `drifted`.
 Loader `inject` string arrays are compared as unordered service sets, matching
 Cordis injection resolution.
 
-The reviewed rc.6 real-DSH run uses a fixed Loader random seed and records
-six runtime augmentation evidence pairs: `0672880e` /
-`@deepseek-ai/dsh-host-directory-picker-browse`, `acd17651` /
-`@deepseek-ai/dsh-client-ui-directory-picker-browse`, and `7038d3b5` /
-`@deepseek-ai/cordis-plugin-hmr` for the first reviewed startup; `823ffe04` /
-`@deepseek-ai/dsh-host-directory-picker-browse`, `0672880e` /
-`@deepseek-ai/dsh-client-ui-directory-picker-browse`, and `acd17651` /
-`@deepseek-ai/cordis-plugin-hmr` for its reviewed restart registration order.
-These are still exact pair evidence, not a package-level exemption. They are
-not published patch-baseline rows, remain unlisted and locked, and a new id,
-other package, or duplicate still produces structural drift.
+The reviewed rc.6 runtime also creates three Loader augmentations that are not
+rows in either published patch: one host directory picker, one matching client
+directory picker, and one HMR helper. Their generated Loader ids are opaque and
+are not stable release or Host identity evidence. Instead, the compatibility
+check requires the exact reviewed package identities, cardinality one for each
+role, matching `browse` or `native` host/client variants, no baseline-id
+collision, and (when Loader exposes it) no declared row-level `inject` value.
+Both platform variants were observed in reviewed rc.6 runs. Duplicate, extra,
+missing, variant-inconsistent, conflicting, and unknown official entries still
+produce structural drift; this is not a package-name allowlist exemption.
+
+This shape cannot prove an unobservable future internal consumer graph or code
+semantic change inside an otherwise matching augmentation. That limitation is
+explicit: the public inventory seam exposes Loader rows, not generated-id
+provenance or private runtime semantics. The entries remain unlisted and locked.
 
 The current public DSH seams available to this plugin do not expose a Host
 release identity: `pluginInventory` is deliberately only a Loader-entry

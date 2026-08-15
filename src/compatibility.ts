@@ -7,7 +7,7 @@ import {
 import { OFFICIAL_PACKAGE_PREFIX } from './policy.ts'
 
 export type VerificationStatus = 'verified' | 'drifted' | 'unverified'
-export type CompatibilityFindingCode = 'missing_expected_entry' | 'new_official_entry' | 'package_identity_changed' | 'declared_inject_changed' | 'baseline_package_unknown' | 'duplicate_runtime_id' | 'runtime_release_identity_unavailable' | 'runtime_release_identity_mismatch'
+export type CompatibilityFindingCode = 'missing_expected_entry' | 'new_official_entry' | 'package_identity_changed' | 'declared_inject_changed' | 'baseline_package_unknown' | 'duplicate_runtime_id' | 'runtime_augmentation_shape_changed' | 'runtime_augmentation_id_conflicts_baseline' | 'runtime_release_identity_unavailable' | 'runtime_release_identity_mismatch'
 
 export interface RuntimeEntryEvidence {
   id: string
@@ -19,23 +19,32 @@ export interface RuntimeEntryEvidence {
 
 /**
  * DSH rc.6 creates these platform/bootstrap helpers after the reviewed patch
- * composition has loaded. They are not rows in either published patch, so
- * treating their opaque runtime ids as composition additions would make the
- * reviewed Host permanently un-mutable. They remain unlisted and locked; this
- * evidence only prevents their exact reviewed runtime pairs from fabricating a
- * roster drift finding.
+ * composition has loaded. Loader generates their ids, so those ids are not
+ * release evidence. The reviewed evidence is instead the strict runtime shape:
+ * one host/client directory-picker pair using the same platform variant and
+ * one HMR helper. They are not published patch-baseline rows and remain locked.
  */
-const REVIEWED_RC6_RUNTIME_AUGMENTATION_PAIRS = new Set([
-  '0672880e\u0000@deepseek-ai/dsh-host-directory-picker-browse',
-  'acd17651\u0000@deepseek-ai/dsh-client-ui-directory-picker-browse',
-  '7038d3b5\u0000@deepseek-ai/cordis-plugin-hmr',
-  '823ffe04\u0000@deepseek-ai/dsh-host-directory-picker-browse',
-  '0672880e\u0000@deepseek-ai/dsh-client-ui-directory-picker-browse',
-  'acd17651\u0000@deepseek-ai/cordis-plugin-hmr',
-])
+type RuntimeAugmentationRole = 'host-directory-picker' | 'client-directory-picker' | 'hmr'
+type DirectoryPickerVariant = 'browse' | 'native'
 
-function isReviewedBootstrapAugmentation(entry: RuntimeEntryEvidence): boolean {
-  return REVIEWED_RC6_RUNTIME_AUGMENTATION_PAIRS.has(`${entry.id}\u0000${entry.packageName}`)
+interface ReviewedRuntimeAugmentation {
+  role: RuntimeAugmentationRole
+  variant?: DirectoryPickerVariant
+}
+
+function reviewedRuntimeAugmentation(entry: RuntimeEntryEvidence): ReviewedRuntimeAugmentation | undefined {
+  switch (entry.packageName) {
+    case '@deepseek-ai/dsh-host-directory-picker-browse':
+      return { role: 'host-directory-picker', variant: 'browse' }
+    case '@deepseek-ai/dsh-host-directory-picker-native':
+      return { role: 'host-directory-picker', variant: 'native' }
+    case '@deepseek-ai/dsh-client-ui-directory-picker-browse':
+      return { role: 'client-directory-picker', variant: 'browse' }
+    case '@deepseek-ai/dsh-client-ui-directory-picker-native':
+      return { role: 'client-directory-picker', variant: 'native' }
+    case '@deepseek-ai/cordis-plugin-hmr':
+      return { role: 'hmr' }
+  }
 }
 
 /** Evidence supplied by a stable, Host-owned runtime identity seam. */
@@ -153,14 +162,66 @@ export function evaluateCompatibility(
     structurallyMatchingReviewedIds.add(reviewed.id)
   }
 
+  const runtimeAugmentations: Array<{ entry: RuntimeEntryEvidence; evidence: ReviewedRuntimeAugmentation }> = []
+  let observedRuntimeAugmentation = false
   for (const [id, entries] of runtimeById) {
+    for (const entry of entries) {
+      const augmentation = reviewedRuntimeAugmentation(entry)
+      if (augmentation === undefined) continue
+      const reviewed = expected.get(entry.id)
+      if (reviewed === undefined || reviewed.expectedPackageName !== entry.packageName) observedRuntimeAugmentation = true
+      if (reviewed !== undefined && reviewed.expectedPackageName !== entry.packageName) {
+        findings.push({
+          scope: 'entry', code: 'runtime_augmentation_id_conflicts_baseline', id: entry.id,
+          expected: reviewed.expectedPackageName, observed: entry.packageName,
+        })
+        directDriftIds.add(entry.id)
+      }
+    }
     if (duplicateIds.has(id)) continue
     const entry = entries[0]!
     if (!entry.packageName.startsWith(OFFICIAL_PACKAGE_PREFIX)) continue
-    if (isReviewedBootstrapAugmentation(entry)) continue
     if (expected.has(entry.id)) continue
+    const augmentation = reviewedRuntimeAugmentation(entry)
+    if (augmentation !== undefined) {
+      runtimeAugmentations.push({ entry, evidence: augmentation })
+      continue
+    }
     findings.push({ scope: 'entry', code: 'new_official_entry', id: entry.id, observed: entry.packageName })
     directDriftIds.add(entry.id)
+  }
+
+  if (observedRuntimeAugmentation) {
+    const reportAugmentationShape = (id: string, expectedShape: string, observedShape: string | readonly string[] | null): void => {
+      findings.push({ scope: 'entry', code: 'runtime_augmentation_shape_changed', id, expected: expectedShape, observed: observedShape })
+      directDriftIds.add(id)
+    }
+    const host = runtimeAugmentations.filter(({ evidence }) => evidence.role === 'host-directory-picker')
+    const client = runtimeAugmentations.filter(({ evidence }) => evidence.role === 'client-directory-picker')
+    const hmr = runtimeAugmentations.filter(({ evidence }) => evidence.role === 'hmr')
+    for (const [role, entries] of [
+      ['host-directory-picker', host],
+      ['client-directory-picker', client],
+      ['hmr', hmr],
+    ] as const) {
+      if (entries.length !== 1) {
+        reportAugmentationShape(`rc6-runtime-augmentation-${role}`, `exactly one ${role} helper`, entries.map(({ entry }) => entry.packageName))
+      }
+    }
+    if (host.length === 1 && client.length === 1 && host[0]!.evidence.variant !== client[0]!.evidence.variant) {
+      reportAugmentationShape(
+        'rc6-runtime-augmentation-directory-picker-variant',
+        'matching host/client directory-picker variants',
+        [host[0]!.entry.packageName, client[0]!.entry.packageName],
+      )
+    }
+    for (const { entry } of runtimeAugmentations) {
+      // rc.6 consistently exposes no row-level inject for these generated
+      // helpers. Compare that fact only when Loader made it observable.
+      if (entry.declaredInjectKnown !== false && entry.declaredInject !== null) {
+        reportAugmentationShape(`rc6-runtime-augmentation-inject-${entry.id}`, 'no declared inject', entry.declaredInject)
+      }
+    }
   }
 
   const identityBound = identityStatus === 'matched'

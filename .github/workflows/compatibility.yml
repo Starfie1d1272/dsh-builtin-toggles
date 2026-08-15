@@ -55,12 +55,13 @@ jobs:
           npm pkg set 'overrides.@aws-sdk/credential-provider-ini=3.973.13'
           npm install @deepseek-ai/dsh@0.1.0-rc.6 "$GITHUB_WORKSPACE/.agent-tmp/compatibility/$PLUGIN_TARBALL"
           export DSH_HOME="$ISOLATED/home"
+          DSH_PORT=39103
           DSH="$ISOLATED/node_modules/.bin/dsh"
           "$DSH" plugin --profile web add "$GITHUB_WORKSPACE/.agent-tmp/compatibility/$PLUGIN_TARBALL"
           wait_for_inspection() {
             local output="$1"
             for attempt in $(seq 1 40); do
-              if curl --fail --silent http://127.0.0.1:39103/api/builtin-toggles/v1/inspection > "$output" && test -s "$output"; then
+              if curl --fail --silent "http://127.0.0.1:$DSH_PORT/api/builtin-toggles/v1/inspection" > "$output" && test -s "$output"; then
                 return 0
               fi
               sleep 1
@@ -82,9 +83,16 @@ jobs:
           NODE
           }
           start_dsh() {
-            node --random-seed=8128 "$DSH" web --port 39103 > "$ISOLATED/dsh.log" 2>&1 &
+            "$DSH" web --port "$DSH_PORT" > "$ISOLATED/dsh.log" 2>&1 &
             DSH_PID=$!
             wait_for_inspection "$ISOLATED/inspection.json"
+          }
+          assert_no_structural_drift() {
+            node --input-type=module - "$1" <<'NODE'
+          import { readFile } from 'node:fs/promises'
+          const inspection = JSON.parse(await readFile(process.argv[2], 'utf8'))
+          if (inspection.compatibility?.driftedCount !== 0) throw new Error(`unexpected structural drift: ${JSON.stringify(inspection.compatibility?.findings)}`)
+          NODE
           }
           print_compatibility() {
             node --input-type=module - "$ISOLATED/inspection.json" <<'NODE'
@@ -112,6 +120,7 @@ jobs:
           start_dsh
           # Initial v1 body is parsed, not merely treated as an HTTP 2xx.
           print_compatibility
+          assert_no_structural_drift "$ISOLATED/inspection.json"
           assert_goal "$ISOLATED/inspection.json" inherited false
           curl --fail --silent http://127.0.0.1:39103/api/builtin-toggles > "$ISOLATED/legacy.json"
           post_toggle force-disable "$ISOLATED/force-disable.json"
@@ -124,6 +133,7 @@ jobs:
           assert_goal "$ISOLATED/after-disable.json" explicitly-disabled true
           # Explicit profile overrides must survive an actual DSH restart.
           restart_dsh
+          assert_no_structural_drift "$ISOLATED/inspection.json"
           assert_goal "$ISOLATED/inspection.json" explicitly-disabled true
           post_toggle force-enable "$ISOLATED/force-enable.json"
           node --input-type=module - "$ISOLATED/force-enable.json" <<'NODE'
@@ -152,7 +162,17 @@ jobs:
           assert_goal "$ISOLATED/after-restore.json" inherited -
           # Recomposition must also preserve inherited state after restart.
           restart_dsh
+          assert_no_structural_drift "$ISOLATED/inspection.json"
           assert_goal "$ISOLATED/inspection.json" inherited -
+          # A second normal-RNG Host home must not depend on the first run's
+          # generated Loader ids either.
+          kill "$DSH_PID"
+          wait "$DSH_PID" || true
+          export DSH_HOME="$ISOLATED/second-home"
+          DSH_PORT=39104
+          "$DSH" plugin --profile web add "$GITHUB_WORKSPACE/.agent-tmp/compatibility/$PLUGIN_TARBALL"
+          start_dsh
+          assert_no_structural_drift "$ISOLATED/inspection.json"
       - name: Compatibility summary
         run: |
           {

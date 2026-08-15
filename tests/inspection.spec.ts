@@ -96,36 +96,52 @@ describe('compatibility evaluation', () => {
     assert.deepEqual(result.findings[0], { scope: 'entry', code: 'new_official_entry', id: 'ui-future', observed: '@deepseek-ai/dsh-client-ui-future' })
   })
 
-  it('accepts only exact reviewed rc.6 runtime augmentation evidence pairs', () => {
-    const browseResult = evaluateCompatibility([
-      runtime(),
-      runtime({ id: '0672880e', packageName: '@deepseek-ai/dsh-host-directory-picker-browse' }),
-      runtime({ id: 'acd17651', packageName: '@deepseek-ai/dsh-client-ui-directory-picker-browse' }),
-      runtime({ id: '7038d3b5', packageName: '@deepseek-ai/cordis-plugin-hmr' }),
-    ], oneBaseline, reviewedRc6Identity)
-    const restartedResult = evaluateCompatibility([
-      runtime(),
-      runtime({ id: '823ffe04', packageName: '@deepseek-ai/dsh-host-directory-picker-browse' }),
-      runtime({ id: '0672880e', packageName: '@deepseek-ai/dsh-client-ui-directory-picker-browse' }),
-      runtime({ id: 'acd17651', packageName: '@deepseek-ai/cordis-plugin-hmr' }),
-    ], oneBaseline, reviewedRc6Identity)
-    for (const result of [browseResult, restartedResult]) {
+  function rc6Augmentations(variant: 'browse' | 'native' = 'browse', ids = ['opaque-host', 'opaque-client', 'opaque-hmr']): RuntimeEntryEvidence[] {
+    return [
+      runtime({ id: ids[0]!, packageName: `@deepseek-ai/dsh-host-directory-picker-${variant}` }),
+      runtime({ id: ids[1]!, packageName: `@deepseek-ai/dsh-client-ui-directory-picker-${variant}` }),
+      runtime({ id: ids[2]!, packageName: '@deepseek-ai/cordis-plugin-hmr' }),
+    ]
+  }
+
+  it('accepts reviewed rc.6 augmentation shape with arbitrary opaque Loader ids', () => {
+    for (const entries of [
+      [runtime(), ...rc6Augmentations('browse', ['random-a', 'random-b', 'random-c'])],
+      [runtime(), ...rc6Augmentations('native', ['different-a', 'different-b', 'different-c'])],
+    ]) {
+      const result = evaluateCompatibility(entries, oneBaseline, reviewedRc6Identity)
       assert.equal(result.status, 'verified')
       assert.deepEqual(result.findings, [])
     }
   })
 
-  it('treats an augmentation package with a new id, changed package, or duplicate id as drift', () => {
+  it('drifts on duplicate, missing, extra, or platform-inconsistent augmentation shape', () => {
     const cases = [
-      [runtime(), runtime({ id: 'new-browse-id', packageName: '@deepseek-ai/dsh-host-directory-picker-browse' })],
-      [runtime(), runtime({ id: '0672880e', packageName: '@deepseek-ai/dsh-host-directory-picker-future' })],
-      [runtime(), runtime({ id: '0672880e', packageName: '@deepseek-ai/dsh-host-directory-picker-browse' }), runtime({ id: '0672880e', packageName: '@deepseek-ai/dsh-host-directory-picker-browse' })],
+      [runtime(), ...rc6Augmentations(), runtime({ id: 'another-host', packageName: '@deepseek-ai/dsh-host-directory-picker-browse' })],
+      [runtime(), ...rc6Augmentations().slice(0, 2)],
+      [runtime(), ...rc6Augmentations('browse').slice(0, 1), ...rc6Augmentations('native').slice(1)],
     ]
     for (const entries of cases) {
       const result = evaluateCompatibility(entries, oneBaseline, reviewedRc6Identity)
       assert.equal(result.status, 'drifted')
-      assert.ok(result.findings.some((finding) => finding.code === 'new_official_entry' || finding.code === 'duplicate_runtime_id'))
+      assert.ok(result.findings.some((finding) => finding.code === 'runtime_augmentation_shape_changed'))
     }
+  })
+
+  it('keeps unknown official packages and baseline-id collisions fail closed', () => {
+    const unknown = evaluateCompatibility([
+      runtime(), ...rc6Augmentations(),
+      runtime({ id: 'ui-future', packageName: '@deepseek-ai/dsh-client-ui-future' }),
+    ], oneBaseline, reviewedRc6Identity)
+    assert.ok(unknown.findings.some((finding) => finding.code === 'new_official_entry'))
+
+    const collision = evaluateCompatibility([
+      runtime(),
+      runtime({ id: 'ui-goal', packageName: '@deepseek-ai/dsh-host-directory-picker-browse' }),
+      ...rc6Augmentations(),
+    ], oneBaseline, reviewedRc6Identity)
+    assert.equal(collision.status, 'drifted')
+    assert.ok(collision.findings.some((finding) => finding.code === 'runtime_augmentation_id_conflicts_baseline'))
   })
 
   it('detects an expected entry missing', () => {
