@@ -12,11 +12,9 @@ An evidence-backed built-in capability Inspector for DeepSeek Harness Web. Its n
 
 Find it under **Settings → Plugins → Built-ins**. The Host generates the inspection: reviewed evidence, profile overrides, persistence preflight, compatibility, and mutation eligibility are server-computed. Inspection rows are attributed by composition scope: Host/profile composition and per-session Agent Preset composition legitimately share ids (e.g. `tool-bash`) without being misreported as duplicates.
 
-![Capability Inspector main view](docs/assets/builtin-toggles-inspector.png)
-![Anomalies-only view (zero on the clean rc.6 + standard Agent Preset)](docs/assets/builtin-toggles-anomalies.png)
-![Agent Preset composition scope (26 per-session rows)](docs/assets/builtin-toggles-agent-preset-scope.png)
+![Capability Inspector main view](https://raw.githubusercontent.com/Starfie1d1272/dsh-builtin-toggles/main/docs/assets/builtin-toggles-inspector.png)
 
-Captured against published `@deepseek-ai/dsh@0.1.0-rc.6` with the standard Agent Preset and the current plugin version; nothing is fabricated. The Host does not expose a stable runtime release identity, so Compatibility honestly shows `unverified / runtime identity unavailable`.
+Captured against published `@deepseek-ai/dsh@0.1.0-rc.6` with the standard Agent Preset and the current plugin version; nothing is fabricated. The Host does not expose a stable runtime release identity, so Compatibility honestly shows `unverified / runtime identity unavailable`. (Two further real captures live in `docs/assets/`: `builtin-toggles-anomalies.png` shows the anomalies-only view at zero on the clean rc.6 + standard Agent Preset, and `builtin-toggles-agent-preset-scope.png` shows the 26 per-session Agent Preset composition rows.)
 
 ## Install
 
@@ -42,7 +40,7 @@ Restart the DSH web/gateway so it reads the bundle at startup.
 
 - **Capability Inspector / Doctor**: inspects every current Web Loader capability, including external, unreviewed, and anomalous rows. It presents runtime state, profile-override tri-state, Agent Preset ownership, composition scope (Host vs Agent Preset composition), review provenance, dependency evidence, compatibility, and server-computed mutation eligibility.
 - **Filters and diagnostics**: filters by ID/package, category, management plane, composition scope, policy, verification, runtime, and anomalies; copied diagnostics redact local paths and configuration contents, and copy feedback appears next to the button.
-- **Composition-scope modeling**: duplicate detection uses the Loader's public `Entry.id` (qualified by the owning-tree entry chain). Legal same ids across the Host and the standard Agent Preset belong to different composition scopes and never produce `duplicate_runtime_id` or `new_official_entry`; a genuine collision inside one scope still drifts and fails closed. Agent Preset rows are per-session, labelled separately, and never become Web-profile manageable items.
+- **Composition-scope modeling**: duplicate detection uses the Loader's public `Entry.id` (qualified by the owning-tree entry chain). Legal same ids across the Host and the standard Agent Preset belong to different composition scopes and never produce `duplicate_runtime_id` or `new_official_entry`; a genuine collision inside one scope still drifts and fails closed. Agent Preset rows are locked server-side by the inspection DTO itself — `policy=locked` (reason `agent-preset`), `mutationEligibility=ineligible`, profile state `not-applicable` — so they can never borrow an allowlisted Host row's manageability or become Web-profile manageable items.
 - **Agent Preset plane**: capabilities such as `tool-*` and `plan-mode` are assembled per session by Agent Presets and are never presented as profile overrides.
 - **Nine reviewed UI controls**: only `ui-deliverables`, `ui-jobs`, `ui-goal`, `ui-message-feedback`, `ui-model-selection`, `ui-agent-preset`, `ui-skill`, `ui-subagent`, and `ui-trajectory`. These presentation leaves apply to the Web profile and all its sessions, do not edit Agent Presets, persist force actions, and restore inheritance through DSH profile/HMR recomposition.
 - **Fail closed**: core services, Agent capabilities, third-party, and unknown entries remain locked. This package has no generic plugin manager, marketplace, or plugin install/update lifecycle.

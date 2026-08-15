@@ -26,8 +26,15 @@ different trees are ambiguous for the baseline; both report
 different `scopeId`s and is not a duplicate. Per-session Agent Preset rows are
 augmentations of a running session, never release evidence: they neither
 satisfy nor violate the reviewed Host baseline, never produce
-`new_official_entry`, are always `verification: "unverified"`, and are never
-mutation targets (POST and the legacy snapshot only address Host rows).
+`new_official_entry`, and are always `verification: "unverified"`. The DTO
+locks them at the server before the client sees them — a preset row is always
+`policy.status: "locked"` with reason `"agent-preset"`, always
+`mutationEligibility.status: "ineligible"` with reason `"agent_preset_scope"`,
+and its `profileOverride`/`profilePersistence` are `"not-applicable"` (the Web
+profile does not govern it, and the `not-applicable` presentation values are
+never anomalies). A preset row can never borrow an allowlisted Host row's
+policy, eligibility, or profile state, even when it shares the bare id. POST
+and the legacy snapshot only address Host rows.
 
 `access.mutation` is request-scoped transport access, not capability
 authorization: it is `"allowed"` only for the loopback same-origin fence and

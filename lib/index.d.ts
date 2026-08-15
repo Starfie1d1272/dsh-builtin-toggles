@@ -286,7 +286,7 @@ declare class Loader extends EntryTree {
 //#endregion
 //#region src/policy.d.ts
 /** Why an entry is not manageable; undefined means it is manageable. */
-type LockReason = 'core' | 'unlisted' | 'external' | 'self';
+type LockReason = 'core' | 'unlisted' | 'external' | 'self' | 'agent-preset';
 /** A snapshot row, as served by GET /api/builtin-toggles. */
 interface SnapshotPlugin {
   id: string;

@@ -258,14 +258,45 @@ describe('scoped composition model (rc.6 Host + Agent Preset)', () => {
     const presetRow = response.capabilities.find((capability) => capability.id === 'tool-bash' && capability.compositionScope === 'agent-preset')!
     assert.equal(presetRow.scopeId, 'include:agent-presets:tool-bash')
     assert.equal(presetRow.policy.status, 'locked')
-    assert.equal(presetRow.policy.reason, 'unlisted')
+    assert.equal(presetRow.policy.reason, 'agent-preset')
     assert.equal(presetRow.verification, 'unverified')
     assert.equal(presetRow.managementPlane, 'agent-preset')
     assert.equal(presetRow.configuration.agentPresetManaged, true)
+    assert.equal(presetRow.configuration.profileOverride.state, 'not-applicable')
+    assert.equal(presetRow.configuration.profilePersistence.status, 'not-applicable')
+    assert.equal(presetRow.mutationEligibility.status, 'ineligible')
+    assert.ok(presetRow.mutationEligibility.reasons.includes('agent_preset_scope'))
     const persona = response.capabilities.find((capability) => capability.id === 'persona')!
     assert.equal(persona.compositionScope, 'agent-preset')
     assert.equal(persona.baseline.reviewed, false)
     assert.equal(persona.policy.status, 'locked')
+  })
+
+  it('never lets a preset row borrow an allowlisted Host row policy, profile state, or eligibility', () => {
+    // A hostile/future preset composing an allowlisted id must not surface the
+    // Host row's manageability on the preset card: the DTO locks it at the
+    // server before the client ever sees it.
+    const host = hostFixture()
+    const presetUiGoal = {
+      id: 'ui-goal',
+      packageName: '@deepseek-ai/dsh-client-ui-goal',
+      declaredInject: null,
+      scopeId: 'include:agent-presets:ui-goal',
+      compositionScope: 'agent-preset' as const,
+    }
+    const response = responseFor([...host, presetUiGoal])
+    const presetRow = response.capabilities.find((capability) => capability.id === 'ui-goal' && capability.compositionScope === 'agent-preset')!
+    assert.equal(presetRow.policy.status, 'locked')
+    assert.equal(presetRow.policy.reason, 'agent-preset')
+    assert.equal(presetRow.mutationEligibility.status, 'ineligible')
+    assert.deepEqual(presetRow.mutationEligibility.reasons, ['agent_preset_scope'])
+    assert.deepEqual(presetRow.configuration.profileOverride, { state: 'not-applicable' })
+    assert.deepEqual(presetRow.configuration.profilePersistence, { status: 'not-applicable' })
+    assert.equal(presetRow.verification, 'unverified')
+    // The Host row of the same id keeps its own manageability projection.
+    const hostRow = response.capabilities.find((capability) => capability.id === 'ui-goal' && capability.compositionScope === 'host')!
+    assert.equal(hostRow.policy.status, 'manageable')
+    assert.equal(hostRow.mutationEligibility.status, 'eligible')
   })
 
   it('still drifts and fails mutation closed on a genuine same-scope duplicate', () => {

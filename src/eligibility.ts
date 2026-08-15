@@ -23,6 +23,7 @@ export type EligibilityReason =
   | 'global_structural_drift'
   | 'runtime_identity_mismatch'
   | 'profile_not_persistable'
+  | 'agent_preset_scope'
 
 export type EligibilityLimitation = 'runtime_identity_unavailable' | 'consumer_graph_not_exposed'
 

@@ -113,15 +113,18 @@ export function buildInspectionResponse(
   const identityVerified = compatibility.runtimeIdentity.status === 'matched'
   const capabilities = entries.map((entry): InspectedCapability => {
     const reviewed = baseline.get(entry.id)
+    // Per-session Agent Preset rows are augmentations of a running session,
+    // never part of the reviewed Host composition: they cannot verify it, no
+    // Host release finding applies to them, and they must never inherit the
+    // Host row's policy, profile state, or mutation eligibility. A preset row
+    // sharing a bare id with an allowlisted Host row stays locked and
+    // ineligible server-side; the UI hiding is never the boundary.
+    const presetRow = entry.compositionScope === 'agent-preset'
     const policy = classifyEntry(entry)
     // A caller that failed to provide profile provenance must never turn an
     // inspection row writable or infer a patch override from effective state.
     const override = profile.profileOverrides.get(entry.id) ?? { state: 'unavailable' as const, reason: 'profile_unavailable' as const }
     const writable = profile.profilePersistence.get(entry.id) ?? { status: 'unwritable' as const, reason: 'profile_patch_unreadable' as const }
-    // Per-session Agent Preset rows are augmentations of a running session,
-    // never part of the reviewed Host composition: they cannot verify it and
-    // no Host release finding applies to them.
-    const presetRow = entry.compositionScope === 'agent-preset'
     return {
       id: entry.id,
       packageName: entry.name,
@@ -130,18 +133,22 @@ export function buildInspectionResponse(
       compositionScope: entry.compositionScope,
       runtimeState: { disabled: entry.disabled, lifecycle: lifecycleFor(entry.phase) },
       configuration: {
-        profileOverride: override,
-        profilePersistence: writable,
+        profileOverride: presetRow ? { state: 'not-applicable' as const } : override,
+        profilePersistence: presetRow ? { status: 'not-applicable' as const } : writable,
         effectiveDisabled: entry.disabled,
         agentPresetManaged: reviewed?.managementPlane === 'agent-preset',
       },
       managementPlane: reviewed?.managementPlane ?? unknownPlane(),
       category: reviewed?.category ?? unknownCategory(),
-      policy: policy.manageable ? { status: 'manageable' } : { status: 'locked', reason: policy.reason },
+      policy: presetRow
+        ? { status: 'locked', reason: 'agent-preset' as const }
+        : policy.manageable ? { status: 'manageable' } : { status: 'locked', reason: policy.reason },
       verification: presetRow ? 'unverified' : findingCodesById.get(entry.id) ?? (
         reviewed === undefined ? 'unverified' : !identityVerified ? 'unverified' : 'verified'
       ),
-      mutationEligibility: evaluateMutationEligibility(entry.id, runtimeEvidence, REVIEWED_DSH_WEB_BASELINE, compatibility, writable),
+      mutationEligibility: presetRow
+        ? { status: 'ineligible' as const, reasons: ['agent_preset_scope' as const], limitations: ['consumer_graph_not_exposed' as const] }
+        : evaluateMutationEligibility(entry.id, runtimeEvidence, REVIEWED_DSH_WEB_BASELINE, compatibility, writable),
       baseline: {
         reviewed: reviewed !== undefined,
         expectedPackageName: reviewed?.expectedPackageName ?? null,

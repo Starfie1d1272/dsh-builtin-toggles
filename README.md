@@ -12,11 +12,9 @@ DeepSeek Harness Web 的 evidence-backed 内置 capability Inspector；9 个经�
 
 本插件位于 **设置 → 插件 → 内置插件**。它显示由 Host 生成的 capability inspection：审阅事实、profile override、可持久化性、兼容性和 mutation eligibility 均由服务端计算。检查结果按 composition scope 区分：Host/profile 组合与按会话挂载的 Agent Preset 组合即使使用相同 id（如 `tool-bash`）也不会互相误判为重复。
 
-![Capability Inspector 主视图](docs/assets/builtin-toggles-inspector.png)
-![仅异常项视图（干净 rc.6 + 标准 Agent Preset 下为 0）](docs/assets/builtin-toggles-anomalies.png)
-![Agent Preset 组合范围（26 个按会话挂载条目）](docs/assets/builtin-toggles-agent-preset-scope.png)
+![Capability Inspector 主视图](https://raw.githubusercontent.com/Starfie1d1272/dsh-builtin-toggles/main/docs/assets/builtin-toggles-inspector.png)
 
-截图环境：published `@deepseek-ai/dsh@0.1.0-rc.6`、标准 Agent Preset、本插件当前版本；数据未伪造。Host 不公开稳定 runtime release identity，因此 Compatibility 如实显示 `unverified / 运行时身份不可用`。
+截图环境：published `@deepseek-ai/dsh@0.1.0-rc.6`、标准 Agent Preset、本插件当前版本；数据未伪造。Host 不公开稳定 runtime release identity，因此 Compatibility 如实显示 `unverified / 运行时身份不可用`。（另两张真实截图保存在 `docs/assets/`：`builtin-toggles-anomalies.png` 展示干净 rc.6 + 标准 Agent Preset 下仅异常项为 0，`builtin-toggles-agent-preset-scope.png` 展示 26 个按会话挂载的 Agent Preset 组合条目。）
 
 ## 安装
 
@@ -42,7 +40,7 @@ npx @deepseek-ai/dsh web
 
 - **Capability Inspector / Doctor**：检查当前 Web Loader 的所有 capability，包括 external、未审阅和异常条目；逐项展示运行状态、profile override 三态、Agent Preset ownership、composition scope（Host 组合 / Agent Preset 组合）、审阅溯源、依赖证据、兼容性与服务端计算的 mutation eligibility。
 - **筛选与诊断**：按 ID/包名、类别、管理平面、组合范围、策略、验证、运行状态及异常筛选；可复制不含本地路径和配置内容的脱敏诊断报告。复制成功/失败反馈显示在按钮旁。
-- **Composition-scope 建模**：duplicate 检查使用 Loader 的公开 `Entry.id`（含 tree-owner 链）。Host 与标准 Agent Preset 中合法的同 ID 各自归属不同 composition scope，不产生 `duplicate_runtime_id` 或 `new_official_entry`；同一 scope 内的真正碰撞仍然 `drifted` 并 fail-closed。Agent Preset 条目按会话挂载、单独标注，绝不变成 Web-profile 可管理项。
+- **Composition-scope 建模**：duplicate 检查使用 Loader 的公开 `Entry.id`（含 tree-owner 链）。Host 与标准 Agent Preset 中合法的同 ID 各自归属不同 composition scope，不产生 `duplicate_runtime_id` 或 `new_official_entry`；同一 scope 内的真正碰撞仍然 `drifted` 并 fail-closed。Agent Preset 条目由服务端 DTO 直接锁定：`policy=locked`（reason `agent-preset`）、`mutationEligibility=ineligible`、profile state 为 `not-applicable`，绝不借用同 bare-id Host 行的可管理性，也不会变成 Web-profile 可管理项。
 - **Agent Preset 平面**：`tool-*` / `plan-mode` 等按会话由 Agent Preset 组装，单独标注，绝不误认为 profile override。
 - **9 个 reviewed UI controls**：仅 `ui-deliverables`、`ui-jobs`、`ui-goal`、`ui-message-feedback`、`ui-model-selection`、`ui-agent-preset`、`ui-skill`、`ui-subagent`、`ui-trajectory`。它们是纯界面 leaf，作用于 `web` profile、影响全部 Web 会话、不编辑 Agent Preset；强制开关更新 Host 并持久化，恢复继承交由 DSH profile/HMR 重组下层值。
 - **Fail-closed**：核心服务、Agent 能力、第三方与未知条目一律锁定；没有 generic plugin manager、marketplace 或安装/更新生命周期。

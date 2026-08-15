@@ -52,4 +52,10 @@ per-session Agent Preset legitimately share bare ids (`tool-bash`,
 same bare id, is a genuine collision: it stays `drifted` and fail-closed for
 mutation. Per-session Agent Preset rows are runtime augmentations, not Host
 release evidence: they never satisfy or violate the reviewed baseline and are
-not counted as `new_official_entry`.
+not counted as `new_official_entry`. The inspection DTO also locks them at the
+server: a preset row always projects `policy=locked` (reason
+`agent-preset`), `mutationEligibility=ineligible` (reason
+`agent_preset_scope`), and `not-applicable` profile override/persistence, so
+it can never borrow an allowlisted Host row's manageability even when it
+shares the bare id; the client additionally hides controls for non-Host rows
+as defense in depth.

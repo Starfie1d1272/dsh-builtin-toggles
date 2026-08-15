@@ -22,8 +22,8 @@ export interface Capability {
   compositionScope: CompositionScope
   runtimeState: { disabled: boolean; lifecycle: string }
   configuration: {
-    profileOverride: { state: 'inherited' | 'explicitly-enabled' | 'explicitly-disabled' | 'unavailable'; reason?: string }
-    profilePersistence: { status: 'writable' | 'unwritable'; reason?: string }
+    profileOverride: { state: 'inherited' | 'explicitly-enabled' | 'explicitly-disabled' | 'unavailable' | 'not-applicable'; reason?: string }
+    profilePersistence: { status: 'writable' | 'unwritable' | 'not-applicable'; reason?: string }
     effectiveDisabled: boolean
     agentPresetManaged: boolean
   }
@@ -132,8 +132,9 @@ export function buildDiagnostics(snapshot: InspectionSnapshot): string {
     ...snapshot.capabilities.map((capability) => [
       `- capability=${publicCapability(capability) ? capability.id : 'external-or-unreviewed'}`,
       `package=${publicCapability(capability) ? capability.packageName : 'redacted'}`,
+      // Only the plane is shared; the full scopeId embeds the Loader owner
+      // chain, which could carry user-defined or external owner ids.
       `compositionScope=${capability.compositionScope}`,
-      `scopeId=${publicCapability(capability) ? capability.scopeId : 'redacted'}`,
       `verification=${capability.verification}`,
       `policy=${capability.policy.status}`,
       `eligibility=${capability.mutationEligibility.status}`,
@@ -157,7 +158,11 @@ export function deepLinkIndex(capabilities: readonly Capability[], id: string | 
 /** Controls are presentation only; eligibility itself is always server-computed. */
 export function availableActions(capability: Capability, snapshot: Pick<InspectionSnapshot, 'access'>): readonly MutationAction[] {
   if (snapshot.access.mutation !== 'allowed') return []
-  if (capability.mutationEligibility.status !== 'eligible' || capability.configuration.profileOverride.state === 'unavailable') return []
+  // Defense in depth: per-session Agent Preset rows are never mutation
+  // targets even if a future DTO projection ever slipped. The server is the
+  // authority (policy locked + eligibility ineligible at the DTO level).
+  if (capability.compositionScope !== 'host') return []
+  if (capability.mutationEligibility.status !== 'eligible' || capability.configuration.profileOverride.state === 'unavailable' || capability.configuration.profileOverride.state === 'not-applicable') return []
   switch (capability.configuration.profileOverride.state) {
     case 'inherited': return ['force-enable', 'force-disable']
     case 'explicitly-enabled': return ['force-disable', 'restore-inheritance']

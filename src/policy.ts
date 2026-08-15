@@ -108,7 +108,7 @@ export const SELF_IDS: ReadonlySet<string> = new Set(['builtin-toggles'])
 export const OFFICIAL_PACKAGE_PREFIX = '@deepseek-ai/'
 
 /** Why an entry is not manageable; undefined means it is manageable. */
-export type LockReason = 'core' | 'unlisted' | 'external' | 'self'
+export type LockReason = 'core' | 'unlisted' | 'external' | 'self' | 'agent-preset'
 
 /** A snapshot row, as served by GET /api/builtin-toggles. */
 export interface SnapshotPlugin {

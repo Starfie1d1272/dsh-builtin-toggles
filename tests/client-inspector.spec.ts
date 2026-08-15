@@ -36,6 +36,17 @@ describe('Capability Inspector client model', () => {
     remote.access = { mutation: 'loopback-required' }
     assert.deepEqual(availableActions(capability(), remote), [])
   })
+  it('never offers mutation actions on an Agent Preset composition row, even if a DTO projection slipped', () => {
+    const presetRow = capability({
+      id: 'ui-goal', compositionScope: 'agent-preset', scopeId: 'include:agent-presets:ui-goal',
+      policy: { status: 'locked', reason: 'agent-preset' },
+      mutationEligibility: { status: 'ineligible', reasons: ['agent_preset_scope'], limitations: [] },
+    })
+    assert.deepEqual(availableActions(presetRow, snapshot()), [])
+    // Defense-in-depth: even a hypothetically eligible preset row shows no controls.
+    const slipped = capability({ compositionScope: 'agent-preset', scopeId: 'include:agent-presets:ui-goal', mutationEligibility: { status: 'eligible', reasons: [], limitations: [] } })
+    assert.deepEqual(availableActions(slipped, snapshot()), [])
+  })
   it('filters broad inspection rows by localized display text, server fields, and real anomalies', () => {
     const all = snapshot([
       capability(),
@@ -64,7 +75,8 @@ describe('Capability Inspector client model', () => {
     })
     const presetRow = capability({
       id: 'persona', packageName: '@deepseek-ai/dsh-persona', compositionScope: 'agent-preset', scopeId: 'include:agent-presets:persona',
-      managementPlane: 'unknown', baseline: { ...capability().baseline, reviewed: false, expectedPackageName: null }, policy: { status: 'locked', reason: 'unlisted' },
+      managementPlane: 'unknown', baseline: { ...capability().baseline, reviewed: false, expectedPackageName: null }, policy: { status: 'locked', reason: 'agent-preset' },
+      configuration: { ...capability().configuration, profileOverride: { state: 'not-applicable' }, profilePersistence: { status: 'not-applicable' } },
     })
     const inspected = snapshot([capability(), augmentation, presetRow])
     assert.equal(capabilityHasAnomaly(inspected.capabilities[1]!, inspected), false)

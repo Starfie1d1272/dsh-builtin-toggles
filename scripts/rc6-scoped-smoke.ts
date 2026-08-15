@@ -62,10 +62,12 @@ const dshRoot = isDshPackage ? install
   : [installNodeModules, install, bundledClosure]
     .find((dir) => existsSync(join(dir, '@deepseek-ai', 'dsh', 'package.json')) && existsSync(join(dir, '@deepseek-ai', 'dsh', 'config', 'agent-presets')))
 if (dshRoot === undefined) throw new Error(`--install ${install} does not contain the shipped agent-preset config`)
-const installAnchor = join(dshRoot, isDshPackage ? 'package.json' : '@deepseek-ai', isDshPackage ? '' : 'dsh', isDshPackage ? '' : 'package.json')
-const shippedPresetRoot = isDshPackage
-  ? fileURLToPath(new URL('config/agent-presets/', pathToFileURL(`${dshRoot}/`)))
-  : fileURLToPath(new URL('../config/agent-presets/', new URL(`file://${join(dshRoot, '@deepseek-ai/dsh/')}`)))
+// The DSH package directory, however it was located: its `config/` ships the
+// agent-preset roots, and `config/agent-presets/` is a SIBLING of that
+// package dir, not of its parent.
+const dshPackageDir = isDshPackage ? dshRoot : join(dshRoot, '@deepseek-ai', 'dsh')
+const installAnchor = join(dshPackageDir, 'package.json')
+const shippedPresetRoot = fileURLToPath(new URL('config/agent-presets/', pathToFileURL(`${dshPackageDir}/`)))
 
 async function importFromPackages<T extends object>(specifier: string): Promise<T> {
   return import(pathToFileURL(join(appBootRoot, specifier)).href) as Promise<T>
@@ -174,6 +176,11 @@ assert.ok(presetRows.some((capability) => capability.id === 'tool-bash'), 'stand
 assert.ok(response.capabilities.some((capability) => capability.id === 'persona' && capability.compositionScope === 'agent-preset'), 'preset-only rows must be attributed to the preset plane')
 for (const row of presetRows) {
   assert.equal(row.policy.status, 'locked', `preset row ${row.id} must never be manageable`)
+  assert.equal(row.policy.reason, 'agent-preset', `preset row ${row.id} lock reason`)
+  assert.equal(row.mutationEligibility.status, 'ineligible', `preset row ${row.id} must be ineligible`)
+  assert.ok(row.mutationEligibility.reasons.includes('agent_preset_scope'), `preset row ${row.id} reason`)
+  assert.equal(row.configuration.profileOverride.state, 'not-applicable', `preset row ${row.id} profile override must be not-applicable`)
+  assert.equal(row.configuration.profilePersistence.status, 'not-applicable', `preset row ${row.id} persistence must be not-applicable`)
   assert.ok(row.scopeId.startsWith('include:agent-presets:'), `preset row ${row.id} scopeId ${row.scopeId}`)
 }
 
