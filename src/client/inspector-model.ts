@@ -40,6 +40,7 @@ export interface Capability {
 
 export interface InspectionSnapshot {
   schemaVersion: string
+  access: { mutation: 'allowed' | 'loopback-required' }
   compatibility: {
     status: VerificationStatus
     runtimeIdentity: { status: string; expected: { value: string }; observed: { value: string } | null }
@@ -138,7 +139,8 @@ export function deepLinkIndex(capabilities: readonly Capability[], id: string | 
 }
 
 /** Controls are presentation only; eligibility itself is always server-computed. */
-export function availableActions(capability: Capability): readonly MutationAction[] {
+export function availableActions(capability: Capability, snapshot: Pick<InspectionSnapshot, 'access'>): readonly MutationAction[] {
+  if (snapshot.access.mutation !== 'allowed') return []
   if (capability.mutationEligibility.status !== 'eligible' || capability.configuration.profileOverride.state === 'unavailable') return []
   switch (capability.configuration.profileOverride.state) {
     case 'inherited': return ['force-enable', 'force-disable']

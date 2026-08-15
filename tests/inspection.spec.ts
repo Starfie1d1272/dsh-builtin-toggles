@@ -219,6 +219,7 @@ describe('inspection API v1 DTO', () => {
     ]
     const response = buildInspectionResponse(entries, null, profile(entries.map((entry) => entry.id)))
     assert.equal(response.schemaVersion, INSPECTION_SCHEMA_VERSION)
+    assert.deepEqual(response.access, { mutation: 'allowed' })
     assert.deepEqual(response.host, { plugin: 'builtin-toggles', profile: 'web' })
     assert.equal(response.inventory.totalEntries, 3)
     assert.equal(response.inventory.officialEntries, 2)

@@ -9,8 +9,9 @@
  *
  * The POST path re-checks every security rule server-side (see policy.ts and
  * mutate.ts); the browser hiding a switch is never the security boundary.
- * Every request crosses the official-semantics browser-trust fence
- * (trust.ts), and every mutation is serialized through a process-wide queue
+ * Reads cross the official-semantics browser-trust fence (trust.ts). Writes
+ * repeat the same fence with no trusted hosts, pinning the configuration plane
+ * to loopback. Every mutation is serialized through a process-wide queue
  * — two browser tabs POSTing at once cannot interleave their runtime updates
  * or profile-patch writes.
  *
@@ -199,6 +200,10 @@ export function apply(ctx: Context): void {
         }
         const pathname = (req.url ?? '/').split('?')[0] ?? '/'
         const method = req.method ?? 'GET'
+        // `trustedHosts` is a DNS-rebinding boundary, not authentication.
+        // Reusing the same fence with an empty set makes configuration writes
+        // loopback-only while preserving trusted-host read inspection.
+        const mutationAccess = isTrustedRequest(req.headers, []) ? 'allowed' : 'loopback-required'
 
         if (method === 'GET' && pathname === INSPECTION_API_PATH) {
           const entries = [...ctx.loader.entries()]
@@ -212,7 +217,7 @@ export function apply(ctx: Context): void {
           // presentation data only; POST always repeats a fresh preflight and
           // the writer repeats its final checks under the lock.
           const profile = inspectProfileSnapshot(profilePatchPath('web'), entries.map((entry) => entry.id))
-          sendJson(res, 200, buildInspectionResponse(entries, null, profile))
+          sendJson(res, 200, buildInspectionResponse(entries, null, profile, mutationAccess))
           return
         }
 
@@ -223,6 +228,10 @@ export function apply(ctx: Context): void {
 
         const match = /^\/api\/builtin-toggles\/([^/]+)$/.exec(pathname)
         if (method === 'POST' && match !== null) {
+          if (mutationAccess !== 'allowed') {
+            sendJson(res, 403, { ok: false, error: 'loopback_required', message: 'builtin-toggles: configuration mutation requires loopback same-origin access' })
+            return
+          }
           const id = decodeEntryId(match[1]!)
           if (id === null) {
             sendJson(res, 400, { ok: false, error: 'invalid_id', message: 'builtin-toggles: malformed percent-encoding in plugin id' })

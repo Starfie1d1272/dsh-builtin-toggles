@@ -1,8 +1,8 @@
 # Inspection API v1
 
 `GET /api/builtin-toggles/v1/inspection` is a same-origin, read-only API. It
-uses the existing trust fence and reports Loader rows even when they are new,
-external, or unreviewed. Its stable machine contract starts with
+accepts loopback and explicitly trusted same-origin authorities, and reports
+Loader rows even when they are new, external, or unreviewed. Its stable machine contract starts with
 `schemaVersion: "builtin-toggles.inspection/v1"`.
 
 The response contains a semantic capability inventory, the reviewed DSH Web
@@ -13,6 +13,35 @@ profile-persistence preflight, effective Loader disabled result, and separately
 labelled Agent Preset ownership) and a
 server-computed `mutationEligibility` for every row. The browser never derives
 eligibility from compatibility or catalog text.
+
+`access.mutation` is request-scoped transport access, not capability
+authorization: it is `"allowed"` only for the loopback same-origin fence and
+`"loopback-required"` for a trusted-host reader. It is deliberately separate
+from `mutationEligibility`, which expresses evidence/profile capability for a
+specific row. POST remains the final security boundary: after the normal
+trusted-host-aware read fence it repeats the same fence with an empty
+`trustedHosts` set, so configuration mutation is loopback-only. `trustedHosts`
+is DNS-rebinding protection, never authentication.
+
+## Contract evolution
+
+`/v1/inspection` and `schemaVersion: "builtin-toggles.inspection/v1"` name
+the HTTP machine-contract major version. They are independent of this npm
+package's 0.x semver version.
+
+Within v1, additive object fields are allowed and consumers must ignore
+unknown object fields. Open code sets—including compatibility finding codes and
+eligibility reason/limitation codes—may gain values. Consumers must treat an
+unknown code as opaque, conservative information; it must never grant mutation
+access or eligibility.
+
+Within v1 this project will not remove or rename an existing required field,
+change an existing field's type, change an already-promised meaning, or smuggle
+breaking behavior behind the same `schemaVersion`. A breaking contract change
+requires a new `/v2/...` route and schemaVersion. v1 must first be deprecated,
+then removed only in a later explicit release; it will not silently change
+meaning. `access.mutation` is an additive v1 field introduced before the v1
+release freeze.
 
 `configuration.profileOverride.state` is one of `inherited`,
 `explicitly-enabled`, or `explicitly-disabled`. It is deliberately distinct

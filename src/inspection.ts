@@ -63,6 +63,8 @@ export interface InspectedCapability {
 export interface InspectionResponseV1 {
   schemaVersion: typeof INSPECTION_SCHEMA_VERSION
   host: { plugin: 'builtin-toggles'; profile: 'web' }
+  /** Request-scoped transport access; distinct from per-capability eligibility. */
+  access: { mutation: 'allowed' | 'loopback-required' }
   compatibility: CompatibilityEvaluation
   inventory: { totalEntries: number; officialEntries: number; externalEntries: number; reviewedEntries: number }
   capabilities: readonly InspectedCapability[]
@@ -82,6 +84,7 @@ export function buildInspectionResponse(
   entries: readonly InspectionRuntimeEntry[],
   runtimeIdentity: RuntimeCompositionIdentity | null,
   profile: ProfileInspectionSnapshot,
+  mutationAccess: 'allowed' | 'loopback-required' = 'allowed',
 ): InspectionResponseV1 {
   const baseline = baselineById()
   const runtimeEvidence: RuntimeEntryEvidence[] = entries.map((entry) => ({
@@ -137,6 +140,7 @@ export function buildInspectionResponse(
   return {
     schemaVersion: INSPECTION_SCHEMA_VERSION,
     host: { plugin: 'builtin-toggles', profile: 'web' },
+    access: { mutation: mutationAccess },
     compatibility,
     inventory: {
       totalEntries: capabilities.length,

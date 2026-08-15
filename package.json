@@ -1,7 +1,7 @@
 {
   "name": "dsh-builtin-toggles",
   "version": "0.3.0",
-  "description": "Fail-closed built-in capability inspector for DeepSeek Harness Web.",
+  "description": "Evidence-backed built-in capability inspector with fail-closed controls for DeepSeek Harness Web.",
   "type": "module",
   "license": "MIT",
   "keywords": [
@@ -39,6 +39,11 @@
     "lib",
     "cordis.patch.yml",
     "README.md",
+    "README.en.md",
+    "COMPATIBILITY.md",
+    "CHANGELOG.md",
+    "SECURITY.md",
+    "docs/inspection-api.md",
     "LICENSE"
   ],
   "scripts": {

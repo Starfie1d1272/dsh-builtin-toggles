@@ -1,6 +1,6 @@
 # Compatibility and reviewed baseline
 
-v0.3.0 has one reviewed baseline: the published
+v0.3.0 has one reviewed/tested baseline: the published
 `@deepseek-ai/dsh-base@0.1.0-rc.6` and
 `@deepseek-ai/dsh-web-app@0.1.0-rc.6` `cordis.patch.yml` artifacts. The
 baseline captures the roster, unique ids, exact package identity, and reviewed
@@ -23,7 +23,8 @@ Automation must not upgrade that absence into a proof.
 4. An allowlist expansion is never a compatibility update; it requires that
    independent review even if the new row looks like a UI plugin.
 
-The compatibility workflow runs its reviewed rc.6 gate on pull requests,
+Later public releases may still install or run, but are not automatically a
+supported/reviewed baseline. The compatibility workflow runs its reviewed rc.6 gate on pull requests,
 schedule, and manual dispatch. It exercises frozen artifacts, this PR's actual
 package tarball, legacy/v1 APIs, force/restart/restore state transitions, and
 the local package gate. The current-public lane compares the corresponding
@@ -38,4 +39,6 @@ evidence match. `drifted` means a direct structural difference or a trusted
 identity mismatch. `unverified` means no difference was observed but the proof
 is incomplete (for example, the Host exposes no bindable release identity).
 The API's entry counts count entry assertions only; composition identity is
-reported separately and is never fabricated as an entry.
+reported separately and is never fabricated as an entry. A live Host without
+that stable public runtime identity remains `unverified`; it must not be
+upgraded by package resolution, private Loader fields, or a guessed version.

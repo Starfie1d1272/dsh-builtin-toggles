@@ -24,7 +24,7 @@ export function CapabilityCard({ capability, presentation, snapshot, busy, initi
       {capability.configuration.agentPresetManaged ? <span style={tag}>{t('presetManaged')}</span> : null}
       <span style={tag}>{capability.configuration.effectiveDisabled ? t('effectiveDisabled') : t('effectiveEnabled')}</span>{capability.policy.reason === undefined ? null : <span style={tag}>{t('lockReason')}: {lockLabel(t, capability.policy.reason)}</span>}
     </div>
-    <div style={{ marginTop: 9 }}><MutationControls capability={capability} busy={busy} onMutate={onMutate} t={t} /></div>
+    <div style={{ marginTop: 9 }}><MutationControls capability={capability} snapshot={snapshot} busy={busy} onMutate={onMutate} t={t} /></div>
     <button type="button" style={detail} aria-expanded={expanded} onClick={() => setExpanded((value) => !value)}>{expanded ? t('detailsHide') : t('detailsShow')}</button>
     {expanded ? <EvidenceDetails capability={capability} snapshot={snapshot} t={t} /> : null}
   </li>
