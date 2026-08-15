@@ -17,6 +17,7 @@ import {
 } from './evidence.ts'
 import { classifyEntry, OFFICIAL_PACKAGE_PREFIX, type EntryFacts, type LockReason } from './policy.ts'
 import { evaluateMutationEligibility, type MutationEligibility } from './eligibility.ts'
+import type { CompositionScope } from './loader-scope.ts'
 import type { ProfileInspectionSnapshot, ProfileMutationPreflight, ProfileOverrideInspection } from './profile-patch.ts'
 
 export const INSPECTION_SCHEMA_VERSION = 'builtin-toggles.inspection/v1'
@@ -27,12 +28,20 @@ export interface InspectionRuntimeEntry extends EntryFacts {
   declaredInjectKnown: boolean
   /** Effective Loader entry option, not a claim about which patch layer supplied it. */
   ownDisabled: boolean | undefined
+  /** Loader-computed identity qualified by the owning-tree entry chain. */
+  scopeId: string
+  /** Public composition plane attribution (Host vs per-session Agent Preset). */
+  compositionScope: CompositionScope
 }
 
 export interface InspectedCapability {
   id: string
   packageName: string
   official: boolean
+  /** Loader-computed identity qualified by the owning-tree entry chain. */
+  scopeId: string
+  /** Public composition plane; per-session preset rows are never host-manageable. */
+  compositionScope: CompositionScope
   runtimeState: { disabled: boolean; lifecycle: RuntimeLifecycle }
   configuration: {
     /** Profile-layer state; this is separate from Loader lifecycle and effective disabled. */
@@ -92,6 +101,8 @@ export function buildInspectionResponse(
     packageName: entry.name,
     declaredInject: entry.declaredInject,
     declaredInjectKnown: entry.declaredInjectKnown,
+    scopeId: entry.scopeId,
+    compositionScope: entry.compositionScope,
   }))
   const compatibility = evaluateCompatibility(runtimeEvidence, REVIEWED_DSH_WEB_BASELINE, runtimeIdentity)
   const findingCodesById = new Map<string, VerificationStatus>()
@@ -107,10 +118,16 @@ export function buildInspectionResponse(
     // inspection row writable or infer a patch override from effective state.
     const override = profile.profileOverrides.get(entry.id) ?? { state: 'unavailable' as const, reason: 'profile_unavailable' as const }
     const writable = profile.profilePersistence.get(entry.id) ?? { status: 'unwritable' as const, reason: 'profile_patch_unreadable' as const }
+    // Per-session Agent Preset rows are augmentations of a running session,
+    // never part of the reviewed Host composition: they cannot verify it and
+    // no Host release finding applies to them.
+    const presetRow = entry.compositionScope === 'agent-preset'
     return {
       id: entry.id,
       packageName: entry.name,
       official: entry.name.startsWith(OFFICIAL_PACKAGE_PREFIX),
+      scopeId: entry.scopeId,
+      compositionScope: entry.compositionScope,
       runtimeState: { disabled: entry.disabled, lifecycle: lifecycleFor(entry.phase) },
       configuration: {
         profileOverride: override,
@@ -121,7 +138,7 @@ export function buildInspectionResponse(
       managementPlane: reviewed?.managementPlane ?? unknownPlane(),
       category: reviewed?.category ?? unknownCategory(),
       policy: policy.manageable ? { status: 'manageable' } : { status: 'locked', reason: policy.reason },
-      verification: findingCodesById.get(entry.id) ?? (
+      verification: presetRow ? 'unverified' : findingCodesById.get(entry.id) ?? (
         reviewed === undefined ? 'unverified' : !identityVerified ? 'unverified' : 'verified'
       ),
       mutationEligibility: evaluateMutationEligibility(entry.id, runtimeEvidence, REVIEWED_DSH_WEB_BASELINE, compatibility, writable),

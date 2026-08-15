@@ -42,3 +42,14 @@ The API's entry counts count entry assertions only; composition identity is
 reported separately and is never fabricated as an entry. A live Host without
 that stable public runtime identity remains `unverified`; it must not be
 upgraded by package resolution, private Loader fields, or a guessed version.
+
+Duplicate detection is scoped by the Loader's public `Entry.id` (the
+tree-owner-qualified identity). The published base/web patches and a
+per-session Agent Preset legitimately share bare ids (`tool-bash`,
+`plan-mode`, …); those rows live in different composition scopes
+(`include:tool-bash` vs `include:agent-presets:tool-bash`) and are not
+`duplicate_runtime_id`. A repeated `scopeId`, or two Host rows claiming the
+same bare id, is a genuine collision: it stays `drifted` and fail-closed for
+mutation. Per-session Agent Preset rows are runtime augmentations, not Host
+release evidence: they never satisfy or violate the reviewed baseline and are
+not counted as `new_official_entry`.

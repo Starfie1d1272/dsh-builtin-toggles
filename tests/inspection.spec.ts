@@ -29,7 +29,10 @@ function runtime(overrides: Partial<RuntimeEntryEvidence> = {}): RuntimeEntryEvi
 function inspected(overrides: Partial<InspectionRuntimeEntry> = {}): InspectionRuntimeEntry {
   return {
     id: 'ui-goal', name: '@deepseek-ai/dsh-client-ui-goal', disabled: false, phase: 'active',
-    declaredInject: null, declaredInjectKnown: true, ownDisabled: undefined, ...overrides,
+    declaredInject: null, declaredInjectKnown: true, ownDisabled: undefined,
+    compositionScope: 'host',
+    ...overrides,
+    scopeId: overrides.scopeId ?? (overrides.id ?? 'ui-goal'),
   }
 }
 
@@ -178,6 +181,115 @@ describe('compatibility evaluation', () => {
     const result = evaluateCompatibility([runtime()], baseline, reviewedRc6Identity)
     assert.equal(result.status, 'unverified')
     assert.equal(result.findings[0]?.code, 'baseline_package_unknown')
+  })
+})
+
+describe('scoped composition model (rc.6 Host + Agent Preset)', () => {
+  /** Every reviewed id as a Host-plane row in the profile include tree. */
+  function hostFixture(): RuntimeEntryEvidence[] {
+    return REVIEWED_DSH_WEB_BASELINE.map((entry) => ({
+      id: entry.id,
+      packageName: entry.expectedPackageName!,
+      declaredInject: entry.serviceEvidence.find((evidence) => evidence.kind === 'declared-inject')?.expectedServices ?? null,
+      scopeId: `include:${entry.id}`,
+      compositionScope: 'host' as const,
+    }))
+  }
+
+  /** The shipped standard preset: rows mirroring Host ids plus preset-only rows. */
+  const STANDARD_PRESET_ROWS: readonly { id: string; packageName: string }[] = [
+    { id: 'persona', packageName: '@deepseek-ai/dsh-persona' },
+    { id: 'agent-instructions', packageName: '@deepseek-ai/dsh-agent-instructions' },
+    { id: 'tool-bash', packageName: '@deepseek-ai/dsh-tool-bash' },
+    { id: 'tool-pwsh', packageName: '@deepseek-ai/dsh-tool-pwsh' },
+    { id: 'tool-fs', packageName: '@deepseek-ai/dsh-tool-fs' },
+    { id: 'tool-jobs', packageName: '@deepseek-ai/dsh-tool-jobs' },
+    { id: 'plan-mode', packageName: '@deepseek-ai/dsh-plan-mode' },
+    { id: 'tool-subagent', packageName: '@deepseek-ai/dsh-tool-subagent' },
+    { id: 'tool-ask-user', packageName: '@deepseek-ai/dsh-tool-ask-user' },
+  ]
+
+  function presetFixture(): RuntimeEntryEvidence[] {
+    return STANDARD_PRESET_ROWS.map((row) => ({
+      id: row.id,
+      packageName: row.packageName,
+      declaredInject: null,
+      scopeId: `include:agent-presets:${row.id}`,
+      compositionScope: 'agent-preset' as const,
+    }))
+  }
+
+  function responseFor(entries: readonly RuntimeEntryEvidence[]): ReturnType<typeof buildInspectionResponse> {
+    return buildInspectionResponse(
+      entries.map((entry) => inspected({
+        id: entry.id, name: entry.packageName,
+        scopeId: entry.scopeId!, compositionScope: entry.compositionScope!,
+        declaredInject: entry.declaredInject,
+      })),
+      null,
+      profile(entries.map((entry) => entry.id)),
+      'allowed',
+    )
+  }
+
+  it('does not drift on legal cross-scope same ids between Host and a standard Agent Preset', () => {
+    const result = evaluateCompatibility([...hostFixture(), ...presetFixture()], REVIEWED_DSH_WEB_BASELINE)
+    assert.equal(result.runtimeIdentity.status, 'unavailable')
+    assert.equal(result.status, 'unverified')
+    assert.equal(result.driftedCount, 0)
+    assert.equal(result.findings.some((finding) => finding.code === 'duplicate_runtime_id'), false)
+    assert.equal(result.findings.some((finding) => finding.code === 'new_official_entry'), false)
+  })
+
+  it('keeps the nine reviewed manageable UI leaves eligible under the normal composition', () => {
+    const response = responseFor([...hostFixture(), ...presetFixture()])
+    assert.equal(response.compatibility.status, 'unverified')
+    assert.equal(response.compatibility.driftedCount, 0)
+    for (const id of MANAGEABLE_IDS) {
+      const leaf = response.capabilities.find((capability) => capability.id === id)!
+      assert.equal(leaf.compositionScope, 'host')
+      assert.equal(leaf.mutationEligibility.status, 'eligible', `${id} must stay eligible`)
+      assert.deepEqual(leaf.mutationEligibility.reasons, [], `${id} reasons`)
+    }
+  })
+
+  it('attributes preset rows to the agent-preset composition scope and never makes them manageable', () => {
+    const response = responseFor([...hostFixture(), ...presetFixture()])
+    const presetRow = response.capabilities.find((capability) => capability.id === 'tool-bash' && capability.compositionScope === 'agent-preset')!
+    assert.equal(presetRow.scopeId, 'include:agent-presets:tool-bash')
+    assert.equal(presetRow.policy.status, 'locked')
+    assert.equal(presetRow.policy.reason, 'unlisted')
+    assert.equal(presetRow.verification, 'unverified')
+    assert.equal(presetRow.managementPlane, 'agent-preset')
+    assert.equal(presetRow.configuration.agentPresetManaged, true)
+    const persona = response.capabilities.find((capability) => capability.id === 'persona')!
+    assert.equal(persona.compositionScope, 'agent-preset')
+    assert.equal(persona.baseline.reviewed, false)
+    assert.equal(persona.policy.status, 'locked')
+  })
+
+  it('still drifts and fails mutation closed on a genuine same-scope duplicate', () => {
+    const host = hostFixture()
+    const bash = host.find((entry) => entry.id === 'tool-bash')!
+    host.push({ ...bash }) // same scopeId → same Loader namespace slot
+    const result = evaluateCompatibility(host, REVIEWED_DSH_WEB_BASELINE)
+    assert.equal(result.status, 'drifted')
+    assert.ok(result.findings.some((finding) => finding.code === 'duplicate_runtime_id' && finding.id === 'tool-bash'))
+    const response = responseFor(host)
+    const goal = response.capabilities.find((capability) => capability.id === 'ui-goal')!
+    assert.equal(goal.mutationEligibility.status, 'ineligible')
+    assert.ok(goal.mutationEligibility.reasons.includes('global_structural_drift'))
+  })
+
+  it('drifts when two Host-plane entries claim the same bare id across different trees', () => {
+    const host = hostFixture()
+    host.push({ id: 'tool-bash', packageName: '@deepseek-ai/dsh-tool-bash', declaredInject: null, scopeId: 'custom:tool-bash', compositionScope: 'host' })
+    const result = evaluateCompatibility(host, REVIEWED_DSH_WEB_BASELINE)
+    assert.equal(result.status, 'drifted')
+    assert.ok(result.findings.some((finding) => finding.code === 'duplicate_runtime_id' && finding.id === 'tool-bash'))
+    // The duplicate row is ambiguous for the baseline; the reviewed id is
+    // skipped rather than silently matched to either instance.
+    assert.equal(result.findings.filter((finding) => finding.id === 'tool-bash').length, 1)
   })
 })
 

@@ -11,6 +11,7 @@ export function EvidenceDetails({ capability, snapshot, t }: { capability: Capab
   const dependency = capability.baseline.dependencyEvidence
   const reference = capability.baseline.reviewedReference
   const fields: readonly [string, string][] = [
+    [t('compositionScope'), `${capability.compositionScope} · ${capability.scopeId}`],
     [t('expectedPackage'), capability.baseline.expectedPackageName ?? t('noEvidence')],
     [t('reviewed'), capability.baseline.reviewed ? t('yes') : t('no')],
     [t('reviewedReference'), reference === null ? t('noEvidence') : `${reference.source} · ${reference.packageName}@${reference.version} · ${reference.artifact}`],

@@ -14,6 +14,21 @@ labelled Agent Preset ownership) and a
 server-computed `mutationEligibility` for every row. The browser never derives
 eligibility from compatibility or catalog text.
 
+Every capability row also carries two additive composition-scope fields:
+`scopeId` is the Loader's public `Entry.id` qualified by the owning-tree entry
+chain (`include:tool-bash` for a Host row, `include:agent-presets:tool-bash`
+for a per-session Agent Preset row), and `compositionScope` is `"host"` or
+`"agent-preset"` attributed from that same public tree-owner chain. Duplicate
+detection is scoped: two entries with the same `scopeId` are a genuine Loader
+namespace collision, and two Host entries claiming the same bare id across
+different trees are ambiguous for the baseline; both report
+`duplicate_runtime_id`. A legal Host + Agent Preset pair sharing a bare id has
+different `scopeId`s and is not a duplicate. Per-session Agent Preset rows are
+augmentations of a running session, never release evidence: they neither
+satisfy nor violate the reviewed Host baseline, never produce
+`new_official_entry`, are always `verification: "unverified"`, and are never
+mutation targets (POST and the legacy snapshot only address Host rows).
+
 `access.mutation` is request-scoped transport access, not capability
 authorization: it is `"allowed"` only for the loopback same-origin fence and
 `"loopback-required"` for a trusted-host reader. It is deliberately separate

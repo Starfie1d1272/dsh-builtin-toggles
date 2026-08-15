@@ -2,6 +2,7 @@
 
 export type VerificationStatus = 'verified' | 'drifted' | 'unverified'
 export type MutationAction = 'force-enable' | 'force-disable' | 'restore-inheritance'
+export type CompositionScope = 'host' | 'agent-preset'
 
 export interface CompatibilityFinding {
   scope: 'composition' | 'entry'
@@ -15,6 +16,10 @@ export interface Capability {
   id: string
   packageName: string
   official: boolean
+  /** Loader-computed identity qualified by the owning-tree entry chain. */
+  scopeId: string
+  /** Public composition plane (Host vs per-session Agent Preset). */
+  compositionScope: CompositionScope
   runtimeState: { disabled: boolean; lifecycle: string }
   configuration: {
     profileOverride: { state: 'inherited' | 'explicitly-enabled' | 'explicitly-disabled' | 'unavailable'; reason?: string }
@@ -57,6 +62,7 @@ export interface InspectorFilters {
   query: string
   category: string
   managementPlane: string
+  compositionScope: string
   policy: string
   verification: string
   runtime: string
@@ -67,12 +73,19 @@ export interface CapabilityPresentation { title: string; summary: string }
 export type PresentationResolver = (capability: Capability) => CapabilityPresentation
 
 export const EMPTY_FILTERS: InspectorFilters = {
-  query: '', category: 'all', managementPlane: 'all', policy: 'all', verification: 'all', runtime: 'all', anomaliesOnly: false,
+  query: '', category: 'all', managementPlane: 'all', compositionScope: 'all', policy: 'all', verification: 'all', runtime: 'all', anomaliesOnly: false,
 }
 
+/**
+ * Anomalies-only must agree with the compatibility evaluator: a row is an
+ * anomaly when the evaluator observed a concrete problem with it, or when its
+ * profile/runtime state is broken. An official row without a baseline row is
+ * NOT an anomaly by itself — the evaluator explicitly accepts reviewed rc.6
+ * runtime augmentations (Host-generated helper ids, per-session Agent Preset
+ * rows) that have no published baseline row.
+ */
 export function capabilityHasAnomaly(capability: Capability, snapshot: InspectionSnapshot): boolean {
   return capability.verification === 'drifted'
-    || (capability.official && !capability.baseline.reviewed)
     || capability.configuration.profileOverride.state === 'unavailable'
     || capability.configuration.profilePersistence.status === 'unwritable'
     || capability.runtimeState.lifecycle === 'failed'
@@ -83,9 +96,10 @@ export function filterCapabilities(snapshot: InspectionSnapshot, filters: Inspec
   const query = filters.query.trim().toLowerCase()
   return snapshot.capabilities.filter((capability) => {
     const display = presentation?.(capability)
-    if (query && ![display?.title, display?.summary, capability.id, capability.packageName, capability.category, capability.managementPlane].join(' ').toLowerCase().includes(query)) return false
+    if (query && ![display?.title, display?.summary, capability.id, capability.packageName, capability.category, capability.managementPlane, capability.compositionScope].join(' ').toLowerCase().includes(query)) return false
     if (filters.category !== 'all' && capability.category !== filters.category) return false
     if (filters.managementPlane !== 'all' && capability.managementPlane !== filters.managementPlane) return false
+    if (filters.compositionScope !== 'all' && capability.compositionScope !== filters.compositionScope) return false
     if (filters.policy !== 'all' && capability.policy.status !== filters.policy) return false
     if (filters.verification !== 'all' && capability.verification !== filters.verification) return false
     if (filters.runtime !== 'all' && capability.runtimeState.lifecycle !== filters.runtime) return false
@@ -118,6 +132,8 @@ export function buildDiagnostics(snapshot: InspectionSnapshot): string {
     ...snapshot.capabilities.map((capability) => [
       `- capability=${publicCapability(capability) ? capability.id : 'external-or-unreviewed'}`,
       `package=${publicCapability(capability) ? capability.packageName : 'redacted'}`,
+      `compositionScope=${capability.compositionScope}`,
+      `scopeId=${publicCapability(capability) ? capability.scopeId : 'redacted'}`,
       `verification=${capability.verification}`,
       `policy=${capability.policy.status}`,
       `eligibility=${capability.mutationEligibility.status}`,

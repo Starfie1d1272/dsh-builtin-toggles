@@ -53,7 +53,8 @@
     "typecheck": "tsc --noEmit",
     "test": "node --expose-internals --import tsx --test tests/*.spec.ts",
     "verify:baseline": "tsx scripts/verify-reviewed-baseline.ts",
-    "pack:check": "node scripts/check-package.mjs"
+    "pack:check": "node scripts/check-package.mjs",
+    "smoke:rc6": "tsx scripts/rc6-scoped-smoke.ts"
   },
   "dsh": {
     "bundle": {

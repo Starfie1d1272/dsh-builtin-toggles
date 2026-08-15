@@ -10,7 +10,13 @@ DeepSeek Harness Web 的 evidence-backed 内置 capability Inspector；9 个经�
 [![npm version](https://img.shields.io/npm/v/dsh-builtin-toggles?logo=npm)](https://www.npmjs.com/package/dsh-builtin-toggles)
 [![CI](https://github.com/Starfie1d1272/dsh-builtin-toggles/actions/workflows/ci.yml/badge.svg)](https://github.com/Starfie1d1272/dsh-builtin-toggles/actions/workflows/ci.yml)
 
-本插件位于 **设置 → 插件 → 内置开关**。它显示由 Host 生成的 capability inspection：审阅事实、profile override、可持久化性、兼容性和 mutation eligibility 均由服务端计算。旧 catalog screenshot 不再代表当前 Inspector，已移除而不以示意图替代。
+本插件位于 **设置 → 插件 → 内置插件**。它显示由 Host 生成的 capability inspection：审阅事实、profile override、可持久化性、兼容性和 mutation eligibility 均由服务端计算。检查结果按 composition scope 区分：Host/profile 组合与按会话挂载的 Agent Preset 组合即使使用相同 id（如 `tool-bash`）也不会互相误判为重复。
+
+![Capability Inspector 主视图](docs/assets/builtin-toggles-inspector.png)
+![仅异常项视图（干净 rc.6 + 标准 Agent Preset 下为 0）](docs/assets/builtin-toggles-anomalies.png)
+![Agent Preset 组合范围（26 个按会话挂载条目）](docs/assets/builtin-toggles-agent-preset-scope.png)
+
+截图环境：published `@deepseek-ai/dsh@0.1.0-rc.6`、标准 Agent Preset、本插件当前版本；数据未伪造。Host 不公开稳定 runtime release identity，因此 Compatibility 如实显示 `unverified / 运行时身份不可用`。
 
 ## 安装
 
@@ -34,8 +40,9 @@ npx @deepseek-ai/dsh web
 
 ## 功能
 
-- **Capability Inspector / Doctor**：检查当前 Web Loader 的所有 capability，包括 external、未审阅和异常条目；逐项展示运行状态、profile override 三态、Agent Preset ownership、审阅溯源、依赖证据、兼容性与服务端计算的 mutation eligibility。
-- **筛选与诊断**：按 ID/包名、类别、管理平面、策略、验证、运行状态及异常筛选；可复制不含本地路径和配置内容的脱敏诊断报告。
+- **Capability Inspector / Doctor**：检查当前 Web Loader 的所有 capability，包括 external、未审阅和异常条目；逐项展示运行状态、profile override 三态、Agent Preset ownership、composition scope（Host 组合 / Agent Preset 组合）、审阅溯源、依赖证据、兼容性与服务端计算的 mutation eligibility。
+- **筛选与诊断**：按 ID/包名、类别、管理平面、组合范围、策略、验证、运行状态及异常筛选；可复制不含本地路径和配置内容的脱敏诊断报告。复制成功/失败反馈显示在按钮旁。
+- **Composition-scope 建模**：duplicate 检查使用 Loader 的公开 `Entry.id`（含 tree-owner 链）。Host 与标准 Agent Preset 中合法的同 ID 各自归属不同 composition scope，不产生 `duplicate_runtime_id` 或 `new_official_entry`；同一 scope 内的真正碰撞仍然 `drifted` 并 fail-closed。Agent Preset 条目按会话挂载、单独标注，绝不变成 Web-profile 可管理项。
 - **Agent Preset 平面**：`tool-*` / `plan-mode` 等按会话由 Agent Preset 组装，单独标注，绝不误认为 profile override。
 - **9 个 reviewed UI controls**：仅 `ui-deliverables`、`ui-jobs`、`ui-goal`、`ui-message-feedback`、`ui-model-selection`、`ui-agent-preset`、`ui-skill`、`ui-subagent`、`ui-trajectory`。它们是纯界面 leaf，作用于 `web` profile、影响全部 Web 会话、不编辑 Agent Preset；强制开关更新 Host 并持久化，恢复继承交由 DSH profile/HMR 重组下层值。
 - **Fail-closed**：核心服务、Agent 能力、第三方与未知条目一律锁定；没有 generic plugin manager、marketplace 或安装/更新生命周期。
@@ -51,7 +58,8 @@ loopback 和显式 trusted host 都能读取 API；所有 configuration mutation
 
 - 唯一 reviewed/tested baseline 是 published `@deepseek-ai/dsh-base@0.1.0-rc.6` 与 `@deepseek-ai/dsh-web-app@0.1.0-rc.6` artifacts，不是 `>= rc.6` 的版本范围承诺。
 - later public releases 可能仍可安装/运行；未经明确 review 前不成为 supported/reviewed baseline。current-public workflow 只发布 observational drift report，不升级 support claim。
-- live Host 没有稳定公开 runtime release identity 时，inspection 诚实保持 `unverified`；不从模块路径、私有字段或版本猜测身份。
+- live Host 没有稳定公开 runtime release identity 时，inspection 诚实保持 `unverified`；不从模块路径、私有字段或版本猜测身份。`runtime_release_identity_unavailable` 只导致 `unverified`，不会单独把兼容性变成 `drifted`。
+- “仅异常项”与 compatibility evaluator 语义一致：已被 evaluator 接受的合法 runtime augmentation（Host 生成的 helper id、按会话挂载的 Agent Preset 行）不因缺少 baseline row 而显示为异常；真正的 drift、failed lifecycle、profile unavailable/unwritable、新的官方结构变化仍然显示。
 - compatibility 与 mutation eligibility 分层：身份缺失不会伪造 verified，逐条 mutation 仍需独立的 safe-leaf、结构漂移与 writer 安全检查。
 
 完整维护边界见 [COMPATIBILITY.md](COMPATIBILITY.md)，安全报告见 [SECURITY.md](SECURITY.md)。
