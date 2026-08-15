@@ -73,4 +73,29 @@ describe('per-entry mutation eligibility', () => {
     assert.equal(result.status, 'ineligible')
     assert.ok(result.reasons.includes('runtime_identity_mismatch'))
   })
+
+  it('ignores a same-bare-id Agent Preset row when targeting the Host row', () => {
+    const host = runtime({ scopeId: 'include:ui-goal', compositionScope: 'host' })
+    const preset = runtime({ scopeId: 'include:agent-presets:ui-goal', compositionScope: 'agent-preset', packageName: '@deepseek-ai/dsh-client-ui-goal' })
+    const result = evaluateMutationEligibility('ui-goal', [host, preset], baseline)
+    assert.equal(result.status, 'eligible')
+    assert.deepEqual(result.reasons, [])
+  })
+
+  it('fails closed when two Host-plane entries claim the same bare id', () => {
+    const first = runtime({ scopeId: 'include:ui-goal', compositionScope: 'host' })
+    const second = runtime({ scopeId: 'custom:ui-goal', compositionScope: 'host' })
+    const result = evaluateMutationEligibility('ui-goal', [first, second], baseline)
+    assert.equal(result.status, 'ineligible')
+    assert.ok(result.reasons.includes('target_structural_drift'))
+  })
+
+  it('does not count accepted Agent Preset rows as global structural drift', () => {
+    const host = runtime({ scopeId: 'include:ui-goal', compositionScope: 'host' })
+    const presetRow = runtime({ id: 'tool-bash', packageName: '@deepseek-ai/dsh-tool-bash', scopeId: 'include:agent-presets:tool-bash', compositionScope: 'agent-preset' })
+    const entries = [host, presetRow]
+    const result = evaluateMutationEligibility('ui-goal', entries, baseline)
+    assert.equal(result.status, 'eligible')
+    assert.equal(result.reasons.includes('global_structural_drift'), false)
+  })
 })

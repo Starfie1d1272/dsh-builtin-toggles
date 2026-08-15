@@ -26,6 +26,7 @@ import type {} from '@deepseek-ai/dsh-host-webserver'
 import { runToggle, type EntryHandle } from './mutate.ts'
 import { buildInspectionResponse, type InspectionRuntimeEntry } from './inspection.ts'
 import { classifyEntry, type EntryFacts, type SnapshotPlugin } from './policy.ts'
+import { compositionScopeOf, scopedEntryFacts } from './loader-scope.ts'
 import { applyDisabledOverride, inspectProfileSnapshot, preflightProfileMutation, profilePatchPath, restoreDisabledInheritance } from './profile-patch.ts'
 import { isTrustedRequest } from './trust.ts'
 
@@ -120,6 +121,7 @@ function inspectionEntry(entry: Entry): InspectionRuntimeEntry {
   return {
     ...entryFacts(entry),
     ...inject,
+    ...scopedEntryFacts(entry),
     ownDisabled: typeof entry.options.disabled === 'boolean' ? entry.options.disabled : undefined,
   }
 }
@@ -131,6 +133,9 @@ export function buildSnapshot(entries: Entry[]): SnapshotPlugin[] {
   for (const entry of entries) {
     if (entry.options.group) continue
     if (typeof entry.options.name !== 'string') continue
+    // Per-session Agent Preset rows are never part of the Host profile's
+    // manageable inventory: the legacy snapshot lists Host rows only.
+    if (compositionScopeOf(entry) !== 'host') continue
     if (seen.has(entry.options.id)) continue
     seen.add(entry.options.id)
     const classified = classifyEntry(entryFacts(entry))
@@ -252,6 +257,10 @@ export function apply(ctx: Context): void {
               profilePreflight: preflightProfileMutation,
               listEntries: () => [...ctx.loader.entries()]
                 .filter((entry) => !entry.options.group)
+                // Mutation targets the Host profile row only. A per-session
+                // Agent Preset row with the same bare id is never a valid
+                // profile-persistence target.
+                .filter((entry) => compositionScopeOf(entry) === 'host')
                 .map(entryHandle),
               persist: async (file, targetId, action) => {
                 const applied = action === 'restore-inheritance'

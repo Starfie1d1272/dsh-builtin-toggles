@@ -5,16 +5,27 @@ import {
   type ReviewedCapabilityBaseline,
 } from './evidence.ts'
 import { OFFICIAL_PACKAGE_PREFIX } from './policy.ts'
+import type { CompositionScope } from './loader-scope.ts'
 
 export type VerificationStatus = 'verified' | 'drifted' | 'unverified'
 export type CompatibilityFindingCode = 'missing_expected_entry' | 'new_official_entry' | 'package_identity_changed' | 'declared_inject_changed' | 'baseline_package_unknown' | 'duplicate_runtime_id' | 'runtime_augmentation_shape_changed' | 'runtime_augmentation_id_conflicts_baseline' | 'runtime_release_identity_unavailable' | 'runtime_release_identity_mismatch'
 
 export interface RuntimeEntryEvidence {
+  /** Bare id inside the containing tree; the reviewed baseline is keyed by it. */
   id: string
   packageName: string
   /** False means Loader exposed an inject shape this inspector cannot compare. */
   declaredInjectKnown?: boolean
   declaredInject: readonly string[] | null
+  /**
+   * Loader-computed identity (`Entry.id`), qualified by the owning-tree entry
+   * chain. Two entries with the same scopeId claim the same Loader namespace
+   * slot; entries from different composition scopes differ here even when
+   * their bare ids match. Defaults to `id` for legacy synthetic evidence.
+   */
+  scopeId?: string
+  /** Public plane attribution; defaults to `'host'` for legacy synthetic evidence. */
+  compositionScope?: CompositionScope
 }
 
 /**
@@ -105,11 +116,23 @@ export function evaluateCompatibility(
   expectedIdentity: ReviewedCompositionIdentity = REVIEWED_RC6_COMPOSITION_IDENTITY,
 ): CompatibilityEvaluation {
   const expected = baselineById(baseline)
-  const runtimeById = new Map<string, RuntimeEntryEvidence[]>()
+  // Loader namespace identity: the scope-qualified `Entry.id`. A bare-id pair
+  // split across Host and Agent Preset compositions has different scopeIds and
+  // is legal; a repeated scopeId is a genuine Loader namespace collision.
+  const runtimeByScope = new Map<string, RuntimeEntryEvidence[]>()
+  // Host-plane rows keyed by bare id. The reviewed baseline describes the Host
+  // composition, so per-row baseline assertions are matched against this plane
+  // only; per-session preset rows are augmentations, not release evidence.
+  const hostById = new Map<string, RuntimeEntryEvidence[]>()
   for (const entry of runtimeEntries) {
-    const entries = runtimeById.get(entry.id)
-    if (entries === undefined) runtimeById.set(entry.id, [entry])
-    else entries.push(entry)
+    const scopeId = entry.scopeId ?? entry.id
+    const scopeRows = runtimeByScope.get(scopeId)
+    if (scopeRows === undefined) runtimeByScope.set(scopeId, [entry])
+    else scopeRows.push(entry)
+    if ((entry.compositionScope ?? 'host') !== 'host') continue
+    const hostRows = hostById.get(entry.id)
+    if (hostRows === undefined) hostById.set(entry.id, [entry])
+    else hostRows.push(entry)
   }
   const findings: CompatibilityFinding[] = []
   const directDriftIds = new Set<string>()
@@ -128,15 +151,24 @@ export function evaluateCompatibility(
   }
 
   const duplicateIds = new Set<string>()
-  for (const [id, entries] of runtimeById) {
+  for (const entries of runtimeByScope.values()) {
     if (entries.length < 2) continue
+    duplicateIds.add(entries[0]!.id)
+    findings.push({ scope: 'entry', code: 'duplicate_runtime_id', id: entries[0]!.id, observed: entries.map((entry) => entry.packageName) })
+    directDriftIds.add(entries[0]!.id)
+  }
+  // A bare id claimed by more than one Host-plane entry is ambiguous for the
+  // reviewed baseline even when the Loader treats the rows as distinct scopes
+  // (for example two different Host subtrees composing the same id).
+  for (const [id, entries] of hostById) {
+    if (entries.length < 2 || duplicateIds.has(id)) continue
     duplicateIds.add(id)
     findings.push({ scope: 'entry', code: 'duplicate_runtime_id', id, observed: entries.map((entry) => entry.packageName) })
     directDriftIds.add(id)
   }
 
   for (const reviewed of baseline) {
-    const entries = runtimeById.get(reviewed.id)
+    const entries = hostById.get(reviewed.id)
     if (entries === undefined) {
       findings.push({ scope: 'entry', code: 'missing_expected_entry', id: reviewed.id, expected: reviewed.expectedPackageName })
       directDriftIds.add(reviewed.id)
@@ -165,7 +197,7 @@ export function evaluateCompatibility(
 
   const runtimeAugmentations: Array<{ entry: RuntimeEntryEvidence; evidence: ReviewedRuntimeAugmentation }> = []
   let observedRuntimeAugmentation = false
-  for (const [id, entries] of runtimeById) {
+  for (const entries of runtimeByScope.values()) {
     for (const entry of entries) {
       const augmentation = reviewedRuntimeAugmentation(entry)
       if (augmentation === undefined) continue
@@ -179,9 +211,13 @@ export function evaluateCompatibility(
         directDriftIds.add(entry.id)
       }
     }
-    if (duplicateIds.has(id)) continue
+    if (duplicateIds.has(entries[0]!.id)) continue
     const entry = entries[0]!
     if (!entry.packageName.startsWith(OFFICIAL_PACKAGE_PREFIX)) continue
+    // Per-session Agent Preset rows are expected augmentations of a running
+    // session, not Host release evidence: they never satisfy, violate, or
+    // extend the reviewed Host baseline.
+    if ((entry.compositionScope ?? 'host') !== 'host') continue
     if (expected.has(entry.id)) continue
     const augmentation = reviewedRuntimeAugmentation(entry)
     if (augmentation !== undefined) {

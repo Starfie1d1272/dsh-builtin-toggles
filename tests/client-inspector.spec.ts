@@ -8,8 +8,9 @@ import { mutateAndRefresh } from '../src/client/inspector-requests.ts'
 function capability(overrides: Partial<Capability> = {}): Capability {
   return {
     id: 'ui-goal', packageName: '@deepseek-ai/dsh-client-ui-goal', official: true,
+    scopeId: 'include:ui-goal', compositionScope: 'host',
     runtimeState: { disabled: false, lifecycle: 'active' },
-    configuration: { profileOverride: { state: 'inherited' }, profilePersistence: { status: 'writable' }, effectiveDisabled: false, agentPresetManaged: false },
+    configuration: { profileOverride: { state: 'inherited' }, profilePersistence: { status: 'writable' }, profileApplicability: 'applicable', effectiveDisabled: false, agentPresetManaged: false },
     managementPlane: 'browser', category: 'presentation', policy: { status: 'manageable' }, verification: 'unverified',
     mutationEligibility: { status: 'eligible', reasons: [], limitations: ['runtime_identity_unavailable'] },
     baseline: { reviewed: true, expectedPackageName: '@deepseek-ai/dsh-client-ui-goal', reviewedReference: { source: 'npm-published-patch', packageName: '@deepseek-ai/dsh-web-app', version: '0.1.0-rc.6', artifact: 'cordis.patch.yml' }, serviceEvidence: [], dependencyEvidence: null, leafReview: 'reviewed-safe-ui-leaf', rationale: null },
@@ -35,17 +36,29 @@ describe('Capability Inspector client model', () => {
     remote.access = { mutation: 'loopback-required' }
     assert.deepEqual(availableActions(capability(), remote), [])
   })
+  it('never offers mutation actions on an Agent Preset composition row, even if a DTO projection slipped', () => {
+    const presetRow = capability({
+      id: 'ui-goal', compositionScope: 'agent-preset', scopeId: 'include:agent-presets:ui-goal',
+      policy: { status: 'locked', reason: 'agent-preset' },
+      mutationEligibility: { status: 'ineligible', reasons: ['agent_preset_scope'], limitations: [] },
+    })
+    assert.deepEqual(availableActions(presetRow, snapshot()), [])
+    // Defense-in-depth: even a hypothetically eligible preset row shows no controls.
+    const slipped = capability({ compositionScope: 'agent-preset', scopeId: 'include:agent-presets:ui-goal', mutationEligibility: { status: 'eligible', reasons: [], limitations: [] } })
+    assert.deepEqual(availableActions(slipped, snapshot()), [])
+  })
   it('filters broad inspection rows by localized display text, server fields, and real anomalies', () => {
     const all = snapshot([
       capability(),
       capability({ id: 'ui-future', packageName: '@deepseek-ai/dsh-client-ui-future', policy: { status: 'locked', reason: 'unlisted' }, verification: 'drifted', mutationEligibility: { status: 'ineligible', reasons: ['not_manageable'], limitations: [] }, baseline: { ...capability().baseline, reviewed: false } }),
       capability({ id: 'external', packageName: '@example/plugin', official: false, managementPlane: 'unknown', category: 'unknown', verification: 'unverified', mutationEligibility: { status: 'ineligible', reasons: ['not_manageable'], limitations: [] } }),
-      capability({ id: 'plan-mode', managementPlane: 'agent-preset', configuration: { ...capability().configuration, agentPresetManaged: true } }),
+      capability({ id: 'plan-mode', managementPlane: 'agent-preset', compositionScope: 'agent-preset', scopeId: 'include:agent-presets:plan-mode', configuration: { ...capability().configuration, agentPresetManaged: true } }),
     ])
     const zhPresentation = (item: Capability) => getCapabilityPresentation('zh', item)
     assert.deepEqual(filterCapabilities(all, { ...EMPTY_FILTERS, query: 'example/plugin' }, zhPresentation).map((item) => item.id), ['external'])
     assert.deepEqual(filterCapabilities(all, { ...EMPTY_FILTERS, query: '目标栏' }, zhPresentation).map((item) => item.id), ['ui-goal'])
     assert.deepEqual(filterCapabilities(all, { ...EMPTY_FILTERS, managementPlane: 'agent-preset' }).map((item) => item.id), ['plan-mode'])
+    assert.deepEqual(filterCapabilities(all, { ...EMPTY_FILTERS, compositionScope: 'agent-preset' }).map((item) => item.id), ['plan-mode'])
     assert.deepEqual(filterCapabilities(all, { ...EMPTY_FILTERS, policy: 'locked', verification: 'drifted' }).map((item) => item.id), ['ui-future'])
     assert.deepEqual(filterCapabilities(all, { ...EMPTY_FILTERS, anomaliesOnly: true }, zhPresentation).map((item) => item.id), ['ui-future'])
   })
@@ -54,6 +67,32 @@ describe('Capability Inspector client model', () => {
     assert.equal(capabilityHasAnomaly(healthy.capabilities[0]!, healthy), false)
     assert.equal(capabilityHasAnomaly(healthy.capabilities[1]!, healthy), false)
     assert.deepEqual(filterCapabilities(healthy, { ...EMPTY_FILTERS, anomaliesOnly: true }).map((item) => item.id), [])
+  })
+  it('does not treat accepted runtime augmentations or agent-preset rows without a baseline row as anomalies', () => {
+    const augmentation = capability({
+      id: 'opaque-host-helper', packageName: '@deepseek-ai/dsh-host-directory-picker-browse', scopeId: 'include:opaque-host-helper',
+      baseline: { ...capability().baseline, reviewed: false, expectedPackageName: null }, policy: { status: 'locked', reason: 'unlisted' },
+    })
+    // A preset row projects the conservative v1 unavailable/unwritable values;
+    // profileApplicability=not-applicable explains them and keeps them out of
+    // anomalies-only.
+    const presetRow = capability({
+      id: 'persona', packageName: '@deepseek-ai/dsh-persona', compositionScope: 'agent-preset', scopeId: 'include:agent-presets:persona',
+      managementPlane: 'unknown', baseline: { ...capability().baseline, reviewed: false, expectedPackageName: null }, policy: { status: 'locked', reason: 'agent-preset' },
+      configuration: { ...capability().configuration, profileOverride: { state: 'unavailable', reason: 'profile_unavailable' }, profilePersistence: { status: 'unwritable', reason: 'profile_patch_unreadable' }, profileApplicability: 'not-applicable' },
+    })
+    const inspected = snapshot([capability(), augmentation, presetRow])
+    assert.equal(capabilityHasAnomaly(inspected.capabilities[1]!, inspected), false)
+    assert.equal(capabilityHasAnomaly(inspected.capabilities[2]!, inspected), false)
+    assert.deepEqual(filterCapabilities(inspected, { ...EMPTY_FILTERS, anomaliesOnly: true }).map((item) => item.id), [])
+  })
+  it('still treats a genuinely broken Host profile as an anomaly (not-applicable is not a blanket suppression)', () => {
+    const brokenHost = capability({
+      id: 'ui-jobs', configuration: { ...capability().configuration, profileOverride: { state: 'unavailable', reason: 'non_literal_disabled' }, profilePersistence: { status: 'unwritable', reason: 'non_literal_disabled' }, profileApplicability: 'applicable' },
+    })
+    const inspected = snapshot([capability(), brokenHost])
+    assert.equal(capabilityHasAnomaly(inspected.capabilities[1]!, inspected), true)
+    assert.deepEqual(filterCapabilities(inspected, { ...EMPTY_FILTERS, anomaliesOnly: true }).map((item) => item.id), ['ui-jobs'])
   })
   it('keeps a structurally matching reviewed capability out of anomalies-only when only composition identity mismatches', () => {
     const inspected = snapshot([capability({ verification: 'unverified' })])
@@ -66,14 +105,21 @@ describe('Capability Inspector client model', () => {
     assert.equal(capabilityHasAnomaly(inspected.capabilities[0]!, inspected), false)
     assert.deepEqual(filterCapabilities(inspected, { ...EMPTY_FILTERS, anomaliesOnly: true }).map((item) => item.id), [])
   })
-  it('marks local drift, review, profile persistence/state, and failed runtime conditions as anomalies', () => {
+  it('marks local drift, real official structure changes, profile persistence/state, and failed runtime conditions as anomalies', () => {
     const drift = capability({ verification: 'drifted' })
-    const unreviewed = capability({ id: 'ui-future', baseline: { ...capability().baseline, reviewed: false } })
+    const newOfficial = capability({ id: 'ui-future', baseline: { ...capability().baseline, reviewed: false } })
     const brokenProfile = capability({ id: 'ui-jobs', configuration: { ...capability().configuration, profileOverride: { state: 'unavailable', reason: 'non_literal_disabled' }, profilePersistence: { status: 'unwritable', reason: 'non_literal_disabled' } } })
     const failed = capability({ id: 'ui-skill', runtimeState: { disabled: false, lifecycle: 'failed' } })
     const localFinding = capability({ id: 'ui-subagent' })
-    const inspected = snapshot([drift, unreviewed, brokenProfile, failed, localFinding])
-    inspected.compatibility = { ...inspected.compatibility, findings: [...inspected.compatibility.findings, { scope: 'entry', code: 'declared_inject_changed', id: 'ui-subagent' }] }
+    const inspected = snapshot([drift, newOfficial, brokenProfile, failed, localFinding])
+    inspected.compatibility = {
+      ...inspected.compatibility,
+      findings: [
+        ...inspected.compatibility.findings,
+        { scope: 'entry', code: 'new_official_entry', id: 'ui-future' },
+        { scope: 'entry', code: 'declared_inject_changed', id: 'ui-subagent' },
+      ],
+    }
     assert.deepEqual(filterCapabilities(inspected, { ...EMPTY_FILTERS, anomaliesOnly: true }).map((item) => item.id), ['ui-goal', 'ui-future', 'ui-jobs', 'ui-skill', 'ui-subagent'])
   })
   it('uses locale-aware catalog presentation only for display/search and falls back safely for external rows', () => {

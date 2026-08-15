@@ -15,6 +15,7 @@ export function InspectorFilters({ snapshot, filters, onChange, t }: { snapshot:
     <input type="search" aria-label={t('searchPlaceholder')} placeholder={t('searchPlaceholder')} style={control} value={filters.query} onChange={(event) => onChange({ ...filters, query: event.target.value })} />
     {select('category', categories, t('filterCategory'), (value) => categoryLabel(t, value))}
     {select('managementPlane', planes, t('filterManagementPlane'), (value) => planeLabel(t, value))}
+    {select('compositionScope', ['host', 'agent-preset'], t('filterCompositionScope'), (value) => planeLabel(t, value))}
     {select('policy', ['manageable', 'locked'], t('filterPolicy'), (value) => policyLabel(t, value))}
     {select('verification', ['verified', 'drifted', 'unverified'], t('filterVerification'), (value) => verificationLabel(t, value))}
     {select('runtime', lifecycles, t('filterRuntime'), (value) => lifecycleLabel(t, value))}

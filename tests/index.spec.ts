@@ -86,6 +86,26 @@ describe('legacy snapshot compatibility', () => {
       { id: 'ui-future', name: '@deepseek-ai/dsh-client-ui-future', disabled: true, phase: null, manageable: false, reason: 'unlisted' },
     ])
   })
+
+  it('excludes per-session Agent Preset rows from the legacy Host snapshot', () => {
+    const presets = {
+      id: 'include:agent-presets', options: { id: 'agent-presets', name: '@deepseek-ai/dsh-agent-presets' },
+      parent: { tree: { ctx: { fiber: { entry: undefined } } } },
+    } as unknown as Entry
+    const presetRow = {
+      id: 'include:agent-presets:tool-bash', options: { id: 'tool-bash', name: '@deepseek-ai/dsh-tool-bash' },
+      disabled: false, fiber: { state: 2 },
+      parent: { tree: { ctx: { fiber: { entry: presets } } } },
+    } as unknown as Entry
+    const hostRow = {
+      id: 'include:tool-bash', options: { id: 'tool-bash', name: '@deepseek-ai/dsh-tool-bash' },
+      disabled: false, fiber: { state: 2 },
+      parent: { tree: { ctx: { fiber: { entry: { id: 'include', options: { id: 'include', name: 'cordis:include' }, parent: { tree: { ctx: { fiber: { entry: undefined } } } } } } } } },
+    } as unknown as Entry
+    assert.deepEqual(buildSnapshot([hostRow, presetRow]), [
+      { id: 'tool-bash', name: '@deepseek-ai/dsh-tool-bash', disabled: false, phase: 'active', manageable: false, reason: 'unlisted' },
+    ])
+  })
 })
 
 describe('loopback-only mutation transport', () => {

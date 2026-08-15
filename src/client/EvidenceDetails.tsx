@@ -11,6 +11,7 @@ export function EvidenceDetails({ capability, snapshot, t }: { capability: Capab
   const dependency = capability.baseline.dependencyEvidence
   const reference = capability.baseline.reviewedReference
   const fields: readonly [string, string][] = [
+    [t('compositionScope'), `${capability.compositionScope} · ${capability.scopeId}`],
     [t('expectedPackage'), capability.baseline.expectedPackageName ?? t('noEvidence')],
     [t('reviewed'), capability.baseline.reviewed ? t('yes') : t('no')],
     [t('reviewedReference'), reference === null ? t('noEvidence') : `${reference.source} · ${reference.packageName}@${reference.version} · ${reference.artifact}`],
@@ -18,7 +19,7 @@ export function EvidenceDetails({ capability, snapshot, t }: { capability: Capab
     [t('dependencyEvidence'), dependency === null ? t('noEvidence') : `${t('provides')}: ${dependency.provides.status}${dependency.provides.services === undefined ? '' : ` (${dependency.provides.services.join(', ')})`} · ${t('consumers')}: ${dependency.consumers.status}${dependency.consumers.ids === undefined ? '' : ` (${dependency.consumers.ids.join(', ')})`}`],
     [t('leafReview'), capability.baseline.leafReview ?? t('noEvidence')],
     [t('compatibilityFindings'), findings.map((finding) => finding.code).join(', ') || t('noFindings')],
-    [t('profilePersistence'), capability.configuration.profilePersistence.status === 'writable' ? capability.configuration.profilePersistence.status : `${capability.configuration.profilePersistence.status}: ${capability.configuration.profilePersistence.reason ?? t('unknown')}`],
+    [t('profilePersistence'), capability.configuration.profileApplicability === 'not-applicable' ? t('profileNotApplicable') : capability.configuration.profilePersistence.status === 'writable' ? capability.configuration.profilePersistence.status : 'reason' in capability.configuration.profilePersistence && capability.configuration.profilePersistence.reason !== undefined ? `${capability.configuration.profilePersistence.status}: ${capability.configuration.profilePersistence.reason}` : capability.configuration.profilePersistence.status],
     [t('eligibilityReasons'), capability.mutationEligibility.reasons.join(', ') || t('none')],
     [t('limitations'), capability.mutationEligibility.limitations.join(', ') || t('none')],
   ]

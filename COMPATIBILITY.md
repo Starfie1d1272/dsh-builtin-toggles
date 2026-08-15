@@ -42,3 +42,23 @@ The API's entry counts count entry assertions only; composition identity is
 reported separately and is never fabricated as an entry. A live Host without
 that stable public runtime identity remains `unverified`; it must not be
 upgraded by package resolution, private Loader fields, or a guessed version.
+
+Duplicate detection is scoped by the Loader's public `Entry.id` (the
+tree-owner-qualified identity). The published base/web patches and a
+per-session Agent Preset legitimately share bare ids (`tool-bash`,
+`plan-mode`, …); those rows live in different composition scopes
+(`include:tool-bash` vs `include:agent-presets:tool-bash`) and are not
+`duplicate_runtime_id`. A repeated `scopeId`, or two Host rows claiming the
+same bare id, is a genuine collision: it stays `drifted` and fail-closed for
+mutation. Per-session Agent Preset rows are runtime augmentations, not Host
+release evidence: they never satisfy or violate the reviewed baseline and are
+not counted as `new_official_entry`. The inspection DTO also locks them at the
+server: a preset row always projects `policy=locked` (reason
+`agent-preset`) and `mutationEligibility=ineligible` (reason
+`agent_preset_scope`); the client additionally hides controls for non-Host
+rows as defense in depth. The v1 `profileOverride.state` /
+`profilePersistence.status` value domains stay closed: a preset row
+conservatively projects `unavailable`/`unwritable`, and the additive
+`configuration.profileApplicability` field (`"applicable"` /
+`"not-applicable"`) carries the real "not governed by the Web profile"
+semantics, which anomalies-only treats as non-anomalous.

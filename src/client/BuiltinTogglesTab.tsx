@@ -22,9 +22,13 @@ export function BuiltinTogglesTab({ t }: BuiltinTogglesTabProps): JSX.Element {
   const [busyId, setBusyId] = useState<string | null>(null)
   const [message, setMessage] = useState<string | null>(null)
   const [attempt, setAttempt] = useState(0)
+  const [copyStatus, setCopyStatus] = useState<'idle' | 'copied' | 'failed'>('idle')
   const queue = useRef<Promise<void>>(Promise.resolve())
+  const copyTimer = useRef<number | undefined>(undefined)
   const deepLinkId = typeof window === 'undefined' ? null : capabilityFromHash(window.location.hash)
   const presentationLocale = t('presentationLocale') as PresentationLocale
+
+  useEffect(() => () => { if (copyTimer.current !== undefined) window.clearTimeout(copyTimer.current) }, [])
 
   const load = useCallback(async (silent = false): Promise<void> => {
     if (!silent) setView({ status: 'loading' })
@@ -64,9 +68,11 @@ export function BuiltinTogglesTab({ t }: BuiltinTogglesTabProps): JSX.Element {
   }, [load, t])
 
   const copyDiagnostics = useCallback(async (snapshot: InspectionSnapshot): Promise<void> => {
-    try { await navigator.clipboard.writeText(buildDiagnostics(snapshot)); setMessage(t('diagnosticsCopied')) }
-    catch { setMessage(t('diagnosticsCopyFailed')) }
-  }, [t])
+    try { await navigator.clipboard.writeText(buildDiagnostics(snapshot)); setCopyStatus('copied') }
+    catch { setCopyStatus('failed') }
+    if (copyTimer.current !== undefined) window.clearTimeout(copyTimer.current)
+    copyTimer.current = window.setTimeout(() => setCopyStatus('idle'), 3000)
+  }, [])
   const presentation = useCallback((capability: import('./inspector-model.ts').Capability) => getCapabilityPresentation(presentationLocale, capability), [presentationLocale])
   const visible = useMemo(() => view.status === 'ready' ? filterCapabilities(view.snapshot, filters, presentation) : [], [view, filters, presentation])
 
@@ -76,7 +82,14 @@ export function BuiltinTogglesTab({ t }: BuiltinTogglesTabProps): JSX.Element {
   return <div style={page}>
     <p style={text}>{t('inspectorIntro')}</p>
     <CompatibilitySummary snapshot={snapshot} t={t} />
-    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}><p style={text}>{t('resultCount', { count: String(visible.length), total: String(snapshot.inventory.totalEntries) })}</p><button type="button" style={button} onClick={() => void copyDiagnostics(snapshot)}>{t('copyDiagnostics')}</button></div>
+    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+      <p style={text}>{t('resultCount', { count: String(visible.length), total: String(snapshot.inventory.totalEntries) })}</p>
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+        <button type="button" style={button} onClick={() => void copyDiagnostics(snapshot)}>{copyStatus === 'copied' ? t('copyCopied') : t('copyDiagnostics')}</button>
+        {/* Copy feedback lives next to the button it came from; role=status keeps it announced. */}
+        {copyStatus === 'idle' ? null : <span role="status" style={copyStatus === 'failed' ? error : text}>{copyStatus === 'copied' ? t('copyCopied') : t('copyFailed')}</span>}
+      </div>
+    </div>
     <InspectorFilters snapshot={snapshot} filters={filters} onChange={setFilters} t={t} />
     {message === null ? null : <p style={text} role="status">{message}</p>}
     {visible.length === 0 ? <p style={text}>{t('searchEmpty')}</p> : <ul style={list}>{visible.map((capability, index) => <CapabilityCard key={`${capability.id}-${index}`} domId={`capability-${index}`} capability={capability} presentation={presentation(capability)} snapshot={snapshot} busy={busyId === capability.id} initiallyExpanded={deepLinkId === capability.id} onMutate={mutate} t={t} />)}</ul>}

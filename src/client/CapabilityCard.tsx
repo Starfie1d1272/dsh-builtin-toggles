@@ -14,13 +14,15 @@ const detail: CSSProperties = { border: 'none', background: 'transparent', color
 
 export function CapabilityCard({ capability, presentation, snapshot, busy, initiallyExpanded, domId, onMutate, t }: { capability: Capability; presentation: CapabilityPresentation; snapshot: InspectionSnapshot; busy: boolean; initiallyExpanded: boolean; domId: string; onMutate: (id: string, action: MutationAction) => void; t: BuiltinTogglesTabProps['t'] }): JSX.Element {
   const [expanded, setExpanded] = useState(initiallyExpanded)
-  const override = capability.configuration.profileOverride.state
+  // A preset row's conservative `unavailable` projection means "not governed
+  // by the Web profile", shown as not-applicable rather than broken.
+  const override = capability.configuration.profileApplicability === 'not-applicable' ? 'not-applicable' : capability.configuration.profileOverride.state
   return <li id={domId} data-capability-id={capability.id} tabIndex={-1} style={card} aria-busy={busy || undefined}>
     <h3 style={title}>{presentation.title}</h3>
     <p style={text}>{capability.id} · {capability.packageName}</p>
     <p style={text}>{presentation.summary}</p>
     <div style={tags}>
-      <span style={tag}>{categoryLabel(t, capability.category)}</span><span style={tag}>{planeLabel(t, capability.managementPlane)}</span><span style={tag}>{policyLabel(t, capability.policy.status)}</span><span style={tag}>{t(`verification${capitalize(capability.verification)}` as never)}</span><span style={tag}>{t(`profile${capitalize(override)}` as never)}</span><span style={tag}>{lifecycleLabel(t, capability.runtimeState.lifecycle)}</span>
+      <span style={tag}>{categoryLabel(t, capability.category)}</span><span style={tag}>{planeLabel(t, capability.managementPlane)}</span><span style={tag}>{t('compositionScope')}: {planeLabel(t, capability.compositionScope)}</span><span style={tag}>{policyLabel(t, capability.policy.status)}</span><span style={tag}>{t(`verification${capitalize(capability.verification)}` as never)}</span><span style={tag}>{t(`profile${capitalize(override)}` as never)}</span><span style={tag}>{lifecycleLabel(t, capability.runtimeState.lifecycle)}</span>
       {capability.configuration.agentPresetManaged ? <span style={tag}>{t('presetManaged')}</span> : null}
       <span style={tag}>{capability.configuration.effectiveDisabled ? t('effectiveDisabled') : t('effectiveEnabled')}</span>{capability.policy.reason === undefined ? null : <span style={tag}>{t('lockReason')}: {lockLabel(t, capability.policy.reason)}</span>}
     </div>

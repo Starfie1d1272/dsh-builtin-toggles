@@ -23,6 +23,7 @@ export type EligibilityReason =
   | 'global_structural_drift'
   | 'runtime_identity_mismatch'
   | 'profile_not_persistable'
+  | 'agent_preset_scope'
 
 export type EligibilityLimitation = 'runtime_identity_unavailable' | 'consumer_graph_not_exposed'
 
@@ -63,7 +64,9 @@ export function evaluateMutationEligibility(
   const reasons: EligibilityReason[] = []
   const limitations: EligibilityLimitation[] = ['consumer_graph_not_exposed']
   const reviewed = baselineById(baseline).get(id)
-  const targetEntries = runtimeEntries.filter((entry) => entry.id === id)
+  // Mutation targets the Host profile row. A per-session Agent Preset row with
+  // the same bare id is a different composition scope, never a valid target.
+  const targetEntries = runtimeEntries.filter((entry) => entry.id === id && (entry.compositionScope ?? 'host') === 'host')
 
   if (!MANAGEABLE.has(id)) addReason(reasons, 'not_manageable')
   if (targetEntries.length === 0) addReason(reasons, 'missing_runtime_entry')

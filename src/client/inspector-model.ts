@@ -2,6 +2,7 @@
 
 export type VerificationStatus = 'verified' | 'drifted' | 'unverified'
 export type MutationAction = 'force-enable' | 'force-disable' | 'restore-inheritance'
+export type CompositionScope = 'host' | 'agent-preset'
 
 export interface CompatibilityFinding {
   scope: 'composition' | 'entry'
@@ -15,10 +16,21 @@ export interface Capability {
   id: string
   packageName: string
   official: boolean
+  /** Loader-computed identity qualified by the owning-tree entry chain. */
+  scopeId: string
+  /** Public composition plane (Host vs per-session Agent Preset). */
+  compositionScope: CompositionScope
   runtimeState: { disabled: boolean; lifecycle: string }
   configuration: {
     profileOverride: { state: 'inherited' | 'explicitly-enabled' | 'explicitly-disabled' | 'unavailable'; reason?: string }
     profilePersistence: { status: 'writable' | 'unwritable'; reason?: string }
+    /**
+     * Additive v1 field: whether the Web profile governs this row.
+     * `not-applicable` marks per-session Agent Preset rows, whose
+     * conservative `profileOverride`/`profilePersistence` values are
+     * "unknown/not writable" rather than "broken".
+     */
+    profileApplicability: 'applicable' | 'not-applicable'
     effectiveDisabled: boolean
     agentPresetManaged: boolean
   }
@@ -57,6 +69,7 @@ export interface InspectorFilters {
   query: string
   category: string
   managementPlane: string
+  compositionScope: string
   policy: string
   verification: string
   runtime: string
@@ -67,14 +80,26 @@ export interface CapabilityPresentation { title: string; summary: string }
 export type PresentationResolver = (capability: Capability) => CapabilityPresentation
 
 export const EMPTY_FILTERS: InspectorFilters = {
-  query: '', category: 'all', managementPlane: 'all', policy: 'all', verification: 'all', runtime: 'all', anomaliesOnly: false,
+  query: '', category: 'all', managementPlane: 'all', compositionScope: 'all', policy: 'all', verification: 'all', runtime: 'all', anomaliesOnly: false,
 }
 
+/**
+ * Anomalies-only must agree with the compatibility evaluator: a row is an
+ * anomaly when the evaluator observed a concrete problem with it, or when its
+ * profile/runtime state is broken. An official row without a baseline row is
+ * NOT an anomaly by itself — the evaluator explicitly accepts reviewed rc.6
+ * runtime augmentations (Host-generated helper ids, per-session Agent Preset
+ * rows) that have no published baseline row.
+ */
 export function capabilityHasAnomaly(capability: Capability, snapshot: InspectionSnapshot): boolean {
+  // A preset row's conservative profile values (`unavailable`/`unwritable`)
+  // are the v1-compatible projection of "the Web profile does not govern this
+  // row", not a broken profile; the additive profileApplicability field says
+  // so, and it must not surface in anomalies-only.
+  const profileNotApplicable = capability.configuration.profileApplicability === 'not-applicable'
   return capability.verification === 'drifted'
-    || (capability.official && !capability.baseline.reviewed)
-    || capability.configuration.profileOverride.state === 'unavailable'
-    || capability.configuration.profilePersistence.status === 'unwritable'
+    || (!profileNotApplicable && capability.configuration.profileOverride.state === 'unavailable')
+    || (!profileNotApplicable && capability.configuration.profilePersistence.status === 'unwritable')
     || capability.runtimeState.lifecycle === 'failed'
     || snapshot.compatibility.findings.some((finding) => finding.id === capability.id)
 }
@@ -83,9 +108,10 @@ export function filterCapabilities(snapshot: InspectionSnapshot, filters: Inspec
   const query = filters.query.trim().toLowerCase()
   return snapshot.capabilities.filter((capability) => {
     const display = presentation?.(capability)
-    if (query && ![display?.title, display?.summary, capability.id, capability.packageName, capability.category, capability.managementPlane].join(' ').toLowerCase().includes(query)) return false
+    if (query && ![display?.title, display?.summary, capability.id, capability.packageName, capability.category, capability.managementPlane, capability.compositionScope].join(' ').toLowerCase().includes(query)) return false
     if (filters.category !== 'all' && capability.category !== filters.category) return false
     if (filters.managementPlane !== 'all' && capability.managementPlane !== filters.managementPlane) return false
+    if (filters.compositionScope !== 'all' && capability.compositionScope !== filters.compositionScope) return false
     if (filters.policy !== 'all' && capability.policy.status !== filters.policy) return false
     if (filters.verification !== 'all' && capability.verification !== filters.verification) return false
     if (filters.runtime !== 'all' && capability.runtimeState.lifecycle !== filters.runtime) return false
@@ -118,6 +144,9 @@ export function buildDiagnostics(snapshot: InspectionSnapshot): string {
     ...snapshot.capabilities.map((capability) => [
       `- capability=${publicCapability(capability) ? capability.id : 'external-or-unreviewed'}`,
       `package=${publicCapability(capability) ? capability.packageName : 'redacted'}`,
+      // Only the plane is shared; the full scopeId embeds the Loader owner
+      // chain, which could carry user-defined or external owner ids.
+      `compositionScope=${capability.compositionScope}`,
       `verification=${capability.verification}`,
       `policy=${capability.policy.status}`,
       `eligibility=${capability.mutationEligibility.status}`,
@@ -141,7 +170,11 @@ export function deepLinkIndex(capabilities: readonly Capability[], id: string | 
 /** Controls are presentation only; eligibility itself is always server-computed. */
 export function availableActions(capability: Capability, snapshot: Pick<InspectionSnapshot, 'access'>): readonly MutationAction[] {
   if (snapshot.access.mutation !== 'allowed') return []
-  if (capability.mutationEligibility.status !== 'eligible' || capability.configuration.profileOverride.state === 'unavailable') return []
+  // Defense in depth: per-session Agent Preset rows are never mutation
+  // targets even if a future DTO projection ever slipped. The server is the
+  // authority (policy locked + eligibility ineligible at the DTO level).
+  if (capability.compositionScope !== 'host') return []
+  if (capability.mutationEligibility.status !== 'eligible' || capability.configuration.profileOverride.state === 'unavailable' || capability.configuration.profileApplicability !== 'applicable') return []
   switch (capability.configuration.profileOverride.state) {
     case 'inherited': return ['force-enable', 'force-disable']
     case 'explicitly-enabled': return ['force-disable', 'restore-inheritance']
