@@ -95,9 +95,9 @@ export const PRESET_MANAGED: ReadonlySet<string> = new Set(PRESET_MANAGED_IDS)
 
 /** Unified copy for preset-managed rows (spec 3.4 / 5H). */
 export const PRESET_MANAGED_STATUS_NOTE =
-  '网页端顶层停用是正常状态；实际是否可用由当前会话的智能体预设决定。'
+  '网页端顶层停用是正常状态；实际是否可用由当前会话的 Agent 预设决定。'
 export const PRESET_MANAGED_LOCK_NOTE =
-  '该能力属于智能体组装，不由全局内置插件面板开关。'
+  '该能力由 Agent 预设组装，不由全局内置插件面板开关。'
 
 /** Fallback copy for official ids without a catalog entry yet (spec 4). */
 export const UNKNOWN_FALLBACK_SUMMARY = '当前版本暂无补充说明。'

@@ -161,6 +161,13 @@ describe('Capability Inspector client model', () => {
     assert.equal(wouldBeEligibleLocally(locked), false)
   })
 
+  it('pins official DSH terminology in zh locale strings', () => {
+    assert.equal(zh.presetManaged, '由 Agent 预设管理')
+    assert.equal(zh.planeAgentPreset, 'Agent 预设')
+    assert.match(zh.verificationNotApplicable, /Agent 预设/)
+    assert.match(zh.inspectorIntro, /Host Loader/)
+  })
+
   it('has equivalent zh-CN/en inspector keys and diagnostics allowlist excludes sensitive local fields', () => {
     assert.deepEqual(Object.keys(en).sort(), Object.keys(zh).sort())
     assert.equal(zh.verificationVerified, '已验证')

@@ -12,10 +12,10 @@
 
 import { resolveCatalogEntry, type BuiltinCatalogEntry } from './catalog.ts'
 
-/** 由 Agent Preset 管理的能力：统一状态说明（展示专用）。 */
+/** 由 Agent 预设管理的能力：统一状态说明（展示专用）。 */
 const PRESET_STATUS =
-  '网页端顶层停用是正常状态；实际是否可用由当前会话的智能体预设决定。'
-const PRESET_LOCK = '该能力属于智能体组装，不由全局内置插件面板开关。'
+  '网页端顶层停用是正常状态；实际是否可用由当前会话的 Agent 预设决定。'
+const PRESET_LOCK = '该能力由 Agent 预设组装，不由全局内置插件面板开关。'
 
 /** 生成一条 preset-managed 条目。 */
 function presetManaged(
@@ -64,18 +64,18 @@ export const zhCatalog: Readonly<Record<string, BuiltinCatalogEntry>> = {
     recommendation: '需要在网页端切换模型时保持开启。',
   },
   'ui-agent-preset': {
-    title: '智能体预设',
-    summary: '选择新会话使用的智能体预设，并查看和管理预设列表；已经开始的会话不会被实时切换。',
+    title: 'Agent 预设',
+    summary: '选择新会话使用的 Agent 预设，并查看和管理预设列表；已经开始的会话不会被实时切换。',
     category: '界面功能',
-    impact: '智能体预设系统仍存在，但网页端失去新会话预设选择、预设标签和管理界面。',
-    recommendation: '使用 Standard、Code、Minimal、Cordis 或自定义预设时建议保持开启。',
+    impact: 'Agent 预设系统仍存在，但网页端失去新会话预设选择、预设标签和管理界面。',
+    recommendation: '使用内置或自定义 Agent 预设时建议保持开启。',
   },
   'ui-skill': {
-    title: '技能入口',
-    summary: '把可用技能加入 / 输入菜单，并为技能工具调用提供专用展示。',
+    title: 'skill 入口',
+    summary: '把可用 skill 加入 / 输入菜单，并为 skill 工具调用提供专用展示。',
     category: '界面功能',
-    impact: '宿主的技能能力仍可存在，但网页端失去技能菜单入口和专用工具行显示。',
-    recommendation: '经常手动调用技能时建议开启。',
+    impact: '宿主的 skill 能力仍可存在，但网页端失去 skill 菜单入口和专用工具行显示。',
+    recommendation: '经常手动调用 skill 时建议开启。',
   },
   'ui-subagent': {
     title: '子代理界面',
@@ -137,7 +137,7 @@ export const zhCatalog: Readonly<Record<string, BuiltinCatalogEntry>> = {
   },
   'ui-settings-plugin-inventory': {
     title: '官方插件列表',
-    summary: 'DSH 自带的只读插件清单，可搜索并查看加载器条目的状态和配置。',
+    summary: 'DSH 自带的只读插件清单，可搜索并查看 Loader 条目的状态和配置。',
     category: '界面功能',
     lockNote: '这是官方的插件状态查看器，保持只读和稳定。',
   },
@@ -157,7 +157,7 @@ export const zhCatalog: Readonly<Record<string, BuiltinCatalogEntry>> = {
     title: '输入触发器',
     summary: '提供 /、@ 等输入触发和候选菜单的基础管线。',
     category: '系统基础',
-    lockNote: '命令、技能和子代理等输入入口依赖它。',
+    lockNote: '命令、skill 和子代理等输入入口依赖它。',
   },
   'ui-commands': {
     title: '命令界面',
@@ -172,14 +172,14 @@ export const zhCatalog: Readonly<Record<string, BuiltinCatalogEntry>> = {
     lockNote: '它会改变沙箱和审批策略，并依赖命令服务，属于安全关键界面。',
   },
   'ui-plan': {
-    title: '规划模式界面',
-    summary: '规划模式启用后，在输入区显示状态控件，并提供退出入口。',
+    title: 'plan mode 界面',
+    summary: 'plan mode 启用后，在输入区显示状态控件，并提供退出入口。',
     category: '模型与智能体',
-    lockNote: '它对应会影响模型行为的规划策略，不作为普通视觉装饰开放关闭。',
+    lockNote: '它对应会影响模型行为的 plan mode 策略，不作为普通视觉装饰开放关闭。',
   },
   'ui-user-questions': {
     title: '用户问答与审批',
-    summary: '显示智能体发起的问题、选择题，以及规划审阅等等待用户决定的卡片。',
+    summary: '显示智能体发起的问题、选择题，以及计划审阅等等待用户决定的卡片。',
     category: '安全与权限',
     lockNote: '这是智能体等待用户回答或批准的重要交互通道。',
   },
@@ -247,7 +247,7 @@ export const zhCatalog: Readonly<Record<string, BuiltinCatalogEntry>> = {
   /* ── 5C. Web Host 与插件基础设施 ─────────────────────────────────── */
   'plugin-inventory': {
     title: '插件清单服务',
-    summary: '宿主侧提供当前加载器条目和运行状态的只读快照。',
+    summary: '宿主侧提供当前 Loader 条目和运行状态的只读快照。',
     category: '系统基础',
     lockNote: '官方插件列表和本插件的诊断都依赖这类清单能力。',
   },
@@ -494,10 +494,10 @@ export const zhCatalog: Readonly<Record<string, BuiltinCatalogEntry>> = {
     lockNote: '属于智能体委派执行后端。',
   },
   'agent-presets': {
-    title: '智能体预设目录',
-    summary: '扫描系统和用户预设，并决定新会话默认采用哪套智能体组装；网页端默认使用 standard。',
+    title: 'Agent 预设目录',
+    summary: '扫描系统和用户预设，并决定新会话默认使用哪个 Agent 预设。',
     category: '模型与智能体',
-    lockNote: '预设决定每个会话拥有哪些模型能力和工具，不能当普通插件开关。',
+    lockNote: 'Agent 预设决定每个会话拥有哪些模型能力和工具，不能当普通插件开关。',
   },
   commands: {
     title: '命令注册表',
@@ -576,10 +576,10 @@ export const zhCatalog: Readonly<Record<string, BuiltinCatalogEntry>> = {
     lockNote: '多个执行类工具依赖它。',
   },
   'shell-env': {
-    title: '命令行环境',
-    summary: '向命令行工具提供 DSH 运行环境和必要的上下文变量。',
+    title: 'Shell 环境',
+    summary: '向 Shell 工具提供 DSH 运行环境和必要的上下文变量。',
     category: '工具与执行',
-    lockNote: '属于命令行执行基础。',
+    lockNote: '属于 Shell 执行基础。',
   },
   'fs-sandbox': {
     title: '沙箱文件系统',
@@ -703,13 +703,13 @@ export const zhCatalog: Readonly<Record<string, BuiltinCatalogEntry>> = {
     '工具与执行',
   ),
   'skill-filesystem': presetManaged(
-    '本地技能发现',
-    '从文件系统发现并注册当前智能体可用的技能。',
+    '本地 skill 发现',
+    '从文件系统发现并注册当前智能体可用的 skill。',
     '模型与智能体',
   ),
   'tool-skill': presetManaged(
-    '技能工具',
-    '让智能体查看和加载技能，并处理用户显式调用的技能。',
+    'skill 工具',
+    '让智能体查看和加载 skill，并处理用户显式调用的 skill。',
     '模型与智能体',
   ),
   'tool-goal': presetManaged(
@@ -718,8 +718,8 @@ export const zhCatalog: Readonly<Record<string, BuiltinCatalogEntry>> = {
     '模型与智能体',
   ),
   'plan-mode': presetManaged(
-    '规划模式',
-    '为智能体提供规划模式、退出工具和对应的规划规则。',
+    'plan mode',
+    '为智能体提供 plan mode、退出工具和对应的规划规则。',
     '模型与智能体',
   ),
   'compaction-basic': presetManaged(
@@ -790,14 +790,14 @@ export const zhCatalog: Readonly<Record<string, BuiltinCatalogEntry>> = {
 
   /* ── 5I. Host 层的 Skill / Subagent 辅助服务 ─────────────────────── */
   skill: {
-    title: '技能注册表',
-    summary: '维护可用技能目录，并把系统、用户和预设提供的技能合并给当前智能体。',
+    title: 'skill 注册表',
+    summary: '维护可用 skill 目录，并把系统、用户和预设提供的 skill 合并给当前智能体。',
     category: '模型与智能体',
-    lockNote: '属于技能基础服务。',
+    lockNote: '属于 skill 基础服务。',
   },
   'skill-badge': {
-    title: '技能标记',
-    summary: '提供技能相关的辅助标记能力。',
+    title: 'skill 标记',
+    summary: '提供 skill 相关的辅助标记能力。',
     category: '模型与智能体',
     statusNote: '官方 base 当前默认停用。',
     lockNote: '保持官方默认状态。',
@@ -811,7 +811,7 @@ export const zhCatalog: Readonly<Record<string, BuiltinCatalogEntry>> = {
 
   /* ── 6. Loader 内部节点（出现时使用；未出现则无害）────────────────── */
   loader: {
-    title: '插件加载器',
+    title: 'Loader',
     summary: '负责加载和管理整个 Cordis/DSH 插件树。',
     category: '系统基础',
     lockNote: '属于系统基础，保持锁定。',

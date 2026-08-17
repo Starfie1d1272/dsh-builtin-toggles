@@ -8,7 +8,7 @@
   当作默认健康状态：无结构漂移时改为正向“未发现结构漂移”，运行时身份
   不可用仍保留在机器证据与复制诊断中。
 - 每张 capability 卡片不再无条件平铺“未验证”：已审阅宿主行显示“结构未见
-  漂移”，智能体预设显示“不参与基线验证”，外部/未审阅项显示“未审阅”，
+  漂移”，Agent 预设显示“不参与基线验证”，外部/未审阅项显示“未审阅”，
   真正漂移/身份不匹配仍显式展示。
 - Verification 筛选器改为按快照中实际出现的用户语义派生，不再保留当前
   环境下不可达的固定三态。
@@ -17,12 +17,9 @@
 - locked 行的默认文案改为简洁锁定原因；完整 eligibility reason /
   limitation 仍保留在展开的机器证据中。
 - “仅异常项 = 0” 时显示正向空状态“当前未发现异常项”。
-- 中文 locale/catalog 全面清理：Agent、Host、Loader、Skill、Goal、Plan、
-  Workflow、Workspace、Session、Settings、UI、client、bundle、Remote、
-  runtime、mutation、eligibility、Profile、allowlist、policy、baseline、
-  reviewed、token、Trajectory、Spawn/Fork、Todo、Shell、persona、inject
-  等按统一词表中文化，保留 `Standard / Code / Minimal / Cordis`、
-  `/goal`、`web_search`、包名与协议缩写等精确技术标识。
+- 中文 locale/catalog 按 DSH 官方产品术语重新对齐：普通 UX 概念使用自然中文；
+  Agent 预设、skill、plan mode、Host Loader、Shell、Cordis、Bash、PowerShell
+  等沿用上游现有命名；机器 ID、package name 与 raw code 保持原样。
 - 展开的机器证据对 `observed / writable / reason / limitation` 等提供
   中文人类解释，同时以括号保留 raw code 供调试。
 

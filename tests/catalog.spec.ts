@@ -326,6 +326,36 @@ describe('catalog coverage', () => {
     }
   })
 
+  it('9b. zh catalog aligns official DSH terminology without re-inventing product names', () => {
+    const uiAgentPreset = zhCatalog['ui-agent-preset']!
+    assert.equal(uiAgentPreset.title, 'Agent 预设')
+    assert.equal(uiAgentPreset.recommendation, '使用内置或自定义 Agent 预设时建议保持开启。')
+    assert.doesNotMatch(uiAgentPreset.recommendation ?? '', /Standard|Code|Minimal|Cordis/)
+
+    const agentPresets = zhCatalog['agent-presets']!
+    assert.equal(agentPresets.title, 'Agent 预设目录')
+    assert.match(agentPresets.summary, /Agent 预设/)
+    assert.doesNotMatch(agentPresets.summary, /standard/)
+    assert.match(agentPresets.lockNote ?? '', /Agent 预设/)
+
+    for (const id of ['ui-skill', 'skill-filesystem', 'tool-skill', 'skill', 'skill-badge']) {
+      const entry = zhCatalog[id]!
+      assert.match(entry.title, /skill/, id)
+      assert.match(entry.summary, /skill/, id)
+    }
+    assert.match(zhCatalog['ui-input-trigger']!.lockNote ?? '', /skill/)
+
+    const uiPlan = zhCatalog['ui-plan']!
+    assert.equal(uiPlan.title, 'plan mode 界面')
+    assert.match(uiPlan.summary, /plan mode/)
+    assert.match(uiPlan.lockNote ?? '', /plan mode/)
+    const planMode = zhCatalog['plan-mode']!
+    assert.equal(planMode.title, 'plan mode')
+    assert.match(planMode.summary, /plan mode/)
+
+    assert.equal(zhCatalog['shell-env']!.title, 'Shell 环境')
+  })
+
   it('9. zh catalog keeps Bash/PowerShell and avoids mechanical translation regressions', () => {
     const entries = Object.values(zhCatalog)
     const allCopy = entries.flatMap((entry) => [
