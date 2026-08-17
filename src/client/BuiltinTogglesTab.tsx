@@ -75,6 +75,7 @@ export function BuiltinTogglesTab({ t }: BuiltinTogglesTabProps): JSX.Element {
   }, [])
   const presentation = useCallback((capability: import('./inspector-model.ts').Capability) => getCapabilityPresentation(presentationLocale, capability), [presentationLocale])
   const visible = useMemo(() => view.status === 'ready' ? filterCapabilities(view.snapshot, filters, presentation) : [], [view, filters, presentation])
+  const hasActiveFilters = filters.query.trim() !== '' || filters.category !== 'all' || filters.managementPlane !== 'all' || filters.compositionScope !== 'all' || filters.policy !== 'all' || filters.verification !== 'all' || filters.runtime !== 'all'
 
   if (view.status === 'loading') return <div style={page} aria-busy="true"><p style={text}>{t('loading')}</p></div>
   if (view.status === 'error') return <div style={page} role="alert"><p style={error}>{t('error')}</p><button type="button" style={button} onClick={() => setAttempt((value) => value + 1)}>{t('retry')}</button></div>
@@ -82,6 +83,7 @@ export function BuiltinTogglesTab({ t }: BuiltinTogglesTabProps): JSX.Element {
   return <div style={page}>
     <p style={text}>{t('inspectorIntro')}</p>
     <CompatibilitySummary snapshot={snapshot} t={t} />
+    {snapshot.access.mutation === 'loopback-required' ? <p style={text} role="status">{t('remoteReadOnly')}</p> : null}
     <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
       <p style={text}>{t('resultCount', { count: String(visible.length), total: String(snapshot.inventory.totalEntries) })}</p>
       <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
@@ -92,6 +94,6 @@ export function BuiltinTogglesTab({ t }: BuiltinTogglesTabProps): JSX.Element {
     </div>
     <InspectorFilters snapshot={snapshot} filters={filters} onChange={setFilters} t={t} />
     {message === null ? null : <p style={text} role="status">{message}</p>}
-    {visible.length === 0 ? <p style={text}>{t('searchEmpty')}</p> : <ul style={list}>{visible.map((capability, index) => <CapabilityCard key={`${capability.id}-${index}`} domId={`capability-${index}`} capability={capability} presentation={presentation(capability)} snapshot={snapshot} busy={busyId === capability.id} initiallyExpanded={deepLinkId === capability.id} onMutate={mutate} t={t} />)}</ul>}
+    {visible.length === 0 ? <p style={text}>{filters.anomaliesOnly ? (hasActiveFilters ? t('searchEmptyAnomaliesFiltered') : t('searchEmptyAnomalies')) : t('searchEmpty')}</p> : <ul style={list}>{visible.map((capability, index) => <CapabilityCard key={`${capability.id}-${index}`} domId={`capability-${index}`} capability={capability} presentation={presentation(capability)} snapshot={snapshot} busy={busyId === capability.id} initiallyExpanded={deepLinkId === capability.id} onMutate={mutate} t={t} />)}</ul>}
   </div>
 }
