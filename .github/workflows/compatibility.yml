@@ -18,7 +18,7 @@ jobs:
     name: reviewed rc.6 gate
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       - uses: pnpm/action-setup@a15d269cd4658e1107c09f1fabf4cbd7bd1f308a
         with:
           version: 11.21.0
@@ -204,7 +204,7 @@ jobs:
     if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       - uses: pnpm/action-setup@a15d269cd4658e1107c09f1fabf4cbd7bd1f308a
         with:
           version: 11.21.0
