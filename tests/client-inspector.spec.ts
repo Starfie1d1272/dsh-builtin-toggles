@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 import { en, zh } from '../src/client/locales.ts'
 import { getCapabilityPresentation } from '../src/client/presentation.ts'
-import { EMPTY_FILTERS, availableActions, buildDiagnostics, capabilityHasAnomaly, deepLinkIndex, filterCapabilities, type Capability, type InspectionSnapshot } from '../src/client/inspector-model.ts'
+import { EMPTY_FILTERS, availableActions, buildDiagnostics, capabilityHasAnomaly, deepLinkIndex, filterCapabilities, verificationFilterValues, verificationPresentationKey, wouldBeEligibleLocally, type Capability, type InspectionSnapshot } from '../src/client/inspector-model.ts'
 import { mutateAndRefresh } from '../src/client/inspector-requests.ts'
 
 function capability(overrides: Partial<Capability> = {}): Capability {
@@ -124,13 +124,43 @@ describe('Capability Inspector client model', () => {
   })
   it('uses locale-aware catalog presentation only for display/search and falls back safely for external rows', () => {
     const known = capability()
-    assert.deepEqual(getCapabilityPresentation('zh', known), { title: '目标栏', summary: '在输入区显示当前 Goal，可编辑、暂停、恢复或清除；Goal 仍通过 /goal 创建。', unknown: false })
+    assert.deepEqual(getCapabilityPresentation('zh', known), { title: '目标栏', summary: '在输入区显示当前目标，可编辑、暂停、恢复或清除；目标仍通过 /goal 创建。', unknown: false })
     assert.deepEqual(getCapabilityPresentation('en', known), { title: 'Goal bar', summary: 'Shows the current Goal near the composer and provides controls to edit, pause, resume, or clear it.', unknown: false })
     assert.deepEqual(getCapabilityPresentation('en', capability({ id: 'ui-goal', packageName: '@example/plugin', official: false })).unknown, true)
     assert.deepEqual(getCapabilityPresentation('en', capability({ id: 'ui-commands', packageName: '@deepseek-ai/dsh-client-ui-commands' })), {
       title: 'dsh-client-ui-commands', summary: 'No reviewed presentation description is available for this capability.', unknown: true,
     })
   })
+  it('maps raw verification to user-facing inspection states without changing the DTO', () => {
+    const healthy = snapshot([capability()])
+    assert.equal(verificationPresentationKey(healthy.capabilities[0]!, healthy), 'no-drift')
+    const presetRow = capability({ id: 'plan-mode', compositionScope: 'agent-preset', policy: { status: 'locked', reason: 'agent-preset' }, baseline: { ...capability().baseline, reviewed: false } })
+    const withPreset = snapshot([presetRow])
+    assert.equal(verificationPresentationKey(withPreset.capabilities[0]!, withPreset), 'not-applicable')
+    const external = capability({ id: 'external', packageName: '@example/plugin', official: false, baseline: { ...capability().baseline, reviewed: false } })
+    const withExternal = snapshot([external])
+    assert.equal(verificationPresentationKey(withExternal.capabilities[0]!, withExternal), 'unreviewed')
+    const mismatch = snapshot([capability()])
+    mismatch.compatibility = { ...mismatch.compatibility, status: 'drifted', runtimeIdentity: { ...mismatch.compatibility.runtimeIdentity, status: 'mismatched' }, findings: [{ scope: 'composition', code: 'runtime_release_identity_mismatch' }] }
+    assert.equal(verificationPresentationKey(mismatch.capabilities[0]!, mismatch), 'identity-mismatch')
+    const drift = capability({ verification: 'drifted' })
+    const withDrift = snapshot([drift])
+    assert.equal(verificationPresentationKey(withDrift.capabilities[0]!, withDrift), 'drifted')
+  })
+
+  it('derives verification filter options from values present in the snapshot', () => {
+    const healthy = snapshot([capability(), capability({ id: 'external', packageName: '@example/plugin', official: false, baseline: { ...capability().baseline, reviewed: false } })])
+    assert.deepEqual(verificationFilterValues(healthy), ['no-drift', 'unreviewed'])
+    assert.deepEqual(verificationFilterValues(snapshot([capability({ verification: 'drifted' })])), ['drifted'])
+  })
+
+  it('knows which rows would be eligible locally for precise remote read-only messaging', () => {
+    const eligible = capability()
+    assert.equal(wouldBeEligibleLocally(eligible), true)
+    const locked = capability({ policy: { status: 'locked', reason: 'core' }, mutationEligibility: { status: 'ineligible', reasons: ['not_manageable'], limitations: [] } })
+    assert.equal(wouldBeEligibleLocally(locked), false)
+  })
+
   it('has equivalent zh-CN/en inspector keys and diagnostics allowlist excludes sensitive local fields', () => {
     assert.deepEqual(Object.keys(en).sort(), Object.keys(zh).sort())
     assert.equal(zh.verificationVerified, '已验证')
