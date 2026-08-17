@@ -325,4 +325,27 @@ describe('catalog coverage', () => {
       assert.ok(set.has(id), 'preset-managed id not in roster: ' + id)
     }
   })
+
+  it('9. zh catalog keeps Bash/PowerShell and avoids mechanical translation regressions', () => {
+    const entries = Object.values(zhCatalog)
+    const allCopy = entries.flatMap((entry) => [
+      entry.title, entry.summary, entry.impact ?? '', entry.recommendation ?? '',
+      entry.lockNote ?? '', entry.statusNote ?? '',
+    ]).join('\n')
+    assert.doesNotMatch(allCopy, /Power命令行环境/)
+    assert.doesNotMatch(allCopy, /命令行环境环境/)
+    assert.doesNotMatch(allCopy, /环境执行环境/)
+
+    const pwsh = zhCatalog['pwsh-sandbox']!
+    assert.match(pwsh.title, /PowerShell/)
+    assert.match(pwsh.summary, /PowerShell/)
+    const toolPwsh = zhCatalog['tool-pwsh']!
+    assert.match(toolPwsh.title, /PowerShell/)
+    assert.match(toolPwsh.summary, /PowerShell/)
+
+    const bash = zhCatalog['bash-sandbox']!
+    assert.match(bash.summary, /Bash/)
+    const toolBash = zhCatalog['tool-bash']!
+    assert.match(toolBash.summary, /Bash/)
+  })
 })

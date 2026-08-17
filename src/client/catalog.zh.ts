@@ -46,7 +46,7 @@ export const zhCatalog: Readonly<Record<string, BuiltinCatalogEntry>> = {
     title: '目标栏',
     summary: '在输入区显示当前目标，可编辑、暂停、恢复或清除；目标仍通过 /goal 创建。',
     category: '界面功能',
-    impact: '目标本身和 /goal 命令仍然存在，但网页端中不再显示目标栏。',
+    impact: '目标本身和 /goal 命令仍然存在，但网页端不再显示目标栏。',
     recommendation: '不使用目标工作流时可以关闭。',
   },
   'ui-message-feedback': {
@@ -60,28 +60,28 @@ export const zhCatalog: Readonly<Record<string, BuiltinCatalogEntry>> = {
     title: '模型选择',
     summary: '提供 /model 和输入区的模型、推理强度选择入口。',
     category: '界面功能',
-    impact: '已配置的模型路由仍可工作，但网页端中失去模型和推理强度选择界面。',
-    recommendation: '需要在网页端中切换模型时保持开启。',
+    impact: '已配置的模型路由仍可工作，但网页端失去模型和推理强度选择界面。',
+    recommendation: '需要在网页端切换模型时保持开启。',
   },
   'ui-agent-preset': {
     title: '智能体预设',
     summary: '选择新会话使用的智能体预设，并查看和管理预设列表；已经开始的会话不会被实时切换。',
     category: '界面功能',
-    impact: '智能体预设系统仍存在，但网页端中失去新会话预设选择、预设标签和管理界面。',
+    impact: '智能体预设系统仍存在，但网页端失去新会话预设选择、预设标签和管理界面。',
     recommendation: '使用 Standard、Code、Minimal、Cordis 或自定义预设时建议保持开启。',
   },
   'ui-skill': {
     title: '技能入口',
     summary: '把可用技能加入 / 输入菜单，并为技能工具调用提供专用展示。',
     category: '界面功能',
-    impact: '宿主的技能能力仍可存在，但网页端中失去技能菜单入口和专用工具行显示。',
+    impact: '宿主的技能能力仍可存在，但网页端失去技能菜单入口和专用工具行显示。',
     recommendation: '经常手动调用技能时建议开启。',
   },
   'ui-subagent': {
     title: '子代理界面',
     summary: '在会话页头显示子代理树、进入子会话，并提供 @ 子代理引用入口。',
     category: '界面功能',
-    impact: '宿主的子代理能力仍可运行，但网页端中失去子代理目录、导航和引用界面。',
+    impact: '宿主的子代理能力仍可运行，但网页端失去子代理目录、导航和引用界面。',
     recommendation: '使用子代理时建议开启。',
   },
   'ui-trajectory': {
@@ -209,7 +209,7 @@ export const zhCatalog: Readonly<Record<string, BuiltinCatalogEntry>> = {
   },
   modules: {
     title: '客户端模块加载',
-    summary: '扫描并向浏览器提供各个客户端插件，组成网页端的启动模块表。',
+    summary: '扫描并向浏览器提供各个客户端插件，组成网页端启动模块表。',
     category: '系统基础',
     lockNote: '所有浏览器插件都依赖它加载。',
   },
@@ -489,7 +489,7 @@ export const zhCatalog: Readonly<Record<string, BuiltinCatalogEntry>> = {
   },
   'subagent-fork-in-process': {
     title: '分叉（Fork）子代理后端',
-    summary: '从父会话历史 fork 一个一次性的子代理执行。',
+    summary: '从父会话历史分叉一个一次性的子代理执行。',
     category: '模型与智能体',
     lockNote: '属于智能体委派执行后端。',
   },
@@ -497,7 +497,7 @@ export const zhCatalog: Readonly<Record<string, BuiltinCatalogEntry>> = {
     title: '智能体预设目录',
     summary: '扫描系统和用户预设，并决定新会话默认采用哪套智能体组装；网页端默认使用 standard。',
     category: '模型与智能体',
-    lockNote: 'Preset 决定每个会话拥有哪些模型能力和工具，不能当普通插件开关。',
+    lockNote: '预设决定每个会话拥有哪些模型能力和工具，不能当普通插件开关。',
   },
   commands: {
     title: '命令注册表',
@@ -557,14 +557,14 @@ export const zhCatalog: Readonly<Record<string, BuiltinCatalogEntry>> = {
   },
   'bash-sandbox': {
     title: 'Bash 沙箱',
-    summary: '在 macOS/Linux 等非 Windows 平台提供受限制的命令行环境执行环境。',
+    summary: '在 macOS/Linux 等非 Windows 平台提供受限制的 Bash 执行环境。',
     category: '安全与权限',
     statusNote: '按操作系统自动选择；在 Windows 上显示停用是正常现象。',
     lockNote: '平台执行和沙箱安全依赖它。',
   },
   'pwsh-sandbox': {
-    title: 'Power命令行环境沙箱',
-    summary: '在 Windows 上提供受限制的 Power命令行环境执行环境。',
+    title: 'PowerShell 沙箱',
+    summary: '在 Windows 上提供受限制的 PowerShell 执行环境。',
     category: '安全与权限',
     statusNote: '按操作系统自动选择；在非 Windows 平台显示停用是正常现象。',
     lockNote: '平台执行和沙箱安全依赖它。',
@@ -576,10 +576,10 @@ export const zhCatalog: Readonly<Record<string, BuiltinCatalogEntry>> = {
     lockNote: '多个执行类工具依赖它。',
   },
   'shell-env': {
-    title: '命令行环境环境',
-    summary: '向命令行环境工具提供 DSH 运行环境和必要的上下文变量。',
+    title: '命令行环境',
+    summary: '向命令行工具提供 DSH 运行环境和必要的上下文变量。',
     category: '工具与执行',
-    lockNote: '属于命令行环境执行基础。',
+    lockNote: '属于命令行执行基础。',
   },
   'fs-sandbox': {
     title: '沙箱文件系统',
@@ -674,12 +674,12 @@ export const zhCatalog: Readonly<Record<string, BuiltinCatalogEntry>> = {
   /* ── 5H. 由 Agent Preset 管理的能力（presetManaged）──────────────── */
   'tool-bash': presetManaged(
     'Bash 工具',
-    '让智能体在 macOS/Linux 等环境执行命令行环境命令。',
+    '让智能体在 macOS/Linux 等环境执行 Bash 命令。',
     '工具与执行',
   ),
   'tool-pwsh': presetManaged(
-    'Power命令行环境工具',
-    '让智能体在 Windows 环境执行 Power命令行环境命令。',
+    'PowerShell 工具',
+    '让智能体在 Windows 环境执行 PowerShell 命令。',
     '工具与执行',
   ),
   'tool-jobs': presetManaged(
@@ -749,12 +749,12 @@ export const zhCatalog: Readonly<Record<string, BuiltinCatalogEntry>> = {
   ),
   'tool-subagent': presetManaged(
     '创建子代理',
-    '让智能体创建一个可继续交互的新建（Spawn）子代理。',
+    '让智能体创建一个可继续交互的 Spawn 子代理。',
     '模型与智能体',
   ),
   'tool-subagent-fork': presetManaged(
     '分叉（Fork）子代理',
-    '让智能体从当前历史 fork 一个一次性子代理。',
+    '让智能体从当前历史分叉一个一次性子代理。',
     '模型与智能体',
   ),
   'workflow-worker-thread': presetManaged(
