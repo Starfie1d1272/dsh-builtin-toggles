@@ -325,4 +325,57 @@ describe('catalog coverage', () => {
       assert.ok(set.has(id), 'preset-managed id not in roster: ' + id)
     }
   })
+
+  it('9b. zh catalog aligns official DSH terminology without re-inventing product names', () => {
+    const uiAgentPreset = zhCatalog['ui-agent-preset']!
+    assert.equal(uiAgentPreset.title, 'Agent 预设')
+    assert.equal(uiAgentPreset.recommendation, '使用内置或自定义 Agent 预设时建议保持开启。')
+    assert.doesNotMatch(uiAgentPreset.recommendation ?? '', /Standard|Code|Minimal|Cordis/)
+
+    const agentPresets = zhCatalog['agent-presets']!
+    assert.equal(agentPresets.title, 'Agent 预设目录')
+    assert.match(agentPresets.summary, /Agent 预设/)
+    assert.doesNotMatch(agentPresets.summary, /standard/)
+    assert.match(agentPresets.lockNote ?? '', /Agent 预设/)
+
+    for (const id of ['ui-skill', 'skill-filesystem', 'tool-skill', 'skill', 'skill-badge']) {
+      const entry = zhCatalog[id]!
+      assert.match(entry.title, /skill/, id)
+      assert.match(entry.summary, /skill/, id)
+    }
+    assert.match(zhCatalog['ui-input-trigger']!.lockNote ?? '', /skill/)
+
+    const uiPlan = zhCatalog['ui-plan']!
+    assert.equal(uiPlan.title, 'plan mode 界面')
+    assert.match(uiPlan.summary, /plan mode/)
+    assert.match(uiPlan.lockNote ?? '', /plan mode/)
+    const planMode = zhCatalog['plan-mode']!
+    assert.equal(planMode.title, 'plan mode')
+    assert.match(planMode.summary, /plan mode/)
+
+    assert.equal(zhCatalog['shell-env']!.title, 'Shell 环境')
+  })
+
+  it('9. zh catalog keeps Bash/PowerShell and avoids mechanical translation regressions', () => {
+    const entries = Object.values(zhCatalog)
+    const allCopy = entries.flatMap((entry) => [
+      entry.title, entry.summary, entry.impact ?? '', entry.recommendation ?? '',
+      entry.lockNote ?? '', entry.statusNote ?? '',
+    ]).join('\n')
+    assert.doesNotMatch(allCopy, /Power命令行环境/)
+    assert.doesNotMatch(allCopy, /命令行环境环境/)
+    assert.doesNotMatch(allCopy, /环境执行环境/)
+
+    const pwsh = zhCatalog['pwsh-sandbox']!
+    assert.match(pwsh.title, /PowerShell/)
+    assert.match(pwsh.summary, /PowerShell/)
+    const toolPwsh = zhCatalog['tool-pwsh']!
+    assert.match(toolPwsh.title, /PowerShell/)
+    assert.match(toolPwsh.summary, /PowerShell/)
+
+    const bash = zhCatalog['bash-sandbox']!
+    assert.match(bash.summary, /Bash/)
+    const toolBash = zhCatalog['tool-bash']!
+    assert.match(toolBash.summary, /Bash/)
+  })
 })

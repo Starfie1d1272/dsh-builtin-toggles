@@ -3,7 +3,7 @@ import type { BuiltinTogglesTabProps } from './BuiltinTogglesTab.tsx'
 import { EvidenceDetails } from './EvidenceDetails.tsx'
 import { categoryLabel, lifecycleLabel, lockLabel, planeLabel, policyLabel } from './labels.ts'
 import { MutationControls } from './MutationControls.tsx'
-import type { Capability, CapabilityPresentation, InspectionSnapshot, MutationAction } from './inspector-model.ts'
+import { verificationPresentationKey, type Capability, type CapabilityPresentation, type InspectionSnapshot, type MutationAction } from './inspector-model.ts'
 
 const card: CSSProperties = { border: '1px solid var(--dsw-alias-border-l2)', borderRadius: 10, padding: '12px 14px', background: 'var(--dsw-alias-bg-layer-3)' }
 const title: CSSProperties = { margin: 0, fontSize: 14, lineHeight: '20px', fontWeight: 600, color: 'var(--dsw-alias-label-primary)' }
@@ -22,7 +22,7 @@ export function CapabilityCard({ capability, presentation, snapshot, busy, initi
     <p style={text}>{capability.id} · {capability.packageName}</p>
     <p style={text}>{presentation.summary}</p>
     <div style={tags}>
-      <span style={tag}>{categoryLabel(t, capability.category)}</span><span style={tag}>{planeLabel(t, capability.managementPlane)}</span><span style={tag}>{t('compositionScope')}: {planeLabel(t, capability.compositionScope)}</span><span style={tag}>{policyLabel(t, capability.policy.status)}</span><span style={tag}>{t(`verification${capitalize(capability.verification)}` as never)}</span><span style={tag}>{t(`profile${capitalize(override)}` as never)}</span><span style={tag}>{lifecycleLabel(t, capability.runtimeState.lifecycle)}</span>
+      <span style={tag}>{categoryLabel(t, capability.category)}</span><span style={tag}>{planeLabel(t, capability.managementPlane)}</span><span style={tag}>{t('compositionScope')}: {planeLabel(t, capability.compositionScope)}</span><span style={tag}>{policyLabel(t, capability.policy.status)}</span><span style={tag}>{t(`verification${capitalize(verificationPresentationKey(capability, snapshot))}` as never)}</span><span style={tag}>{t(`profile${capitalize(override)}` as never)}</span><span style={tag}>{lifecycleLabel(t, capability.runtimeState.lifecycle)}</span>
       {capability.configuration.agentPresetManaged ? <span style={tag}>{t('presetManaged')}</span> : null}
       <span style={tag}>{capability.configuration.effectiveDisabled ? t('effectiveDisabled') : t('effectiveEnabled')}</span>{capability.policy.reason === undefined ? null : <span style={tag}>{t('lockReason')}: {lockLabel(t, capability.policy.reason)}</span>}
     </div>

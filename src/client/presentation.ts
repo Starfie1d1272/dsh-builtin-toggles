@@ -22,7 +22,7 @@ function fromCatalog(entry: BuiltinCatalogEntry): CapabilityPresentation {
 function fallback(locale: PresentationLocale, packageName: string): CapabilityPresentation {
   return {
     title: moduleShortName(packageName),
-    summary: locale === 'zh' ? '此 capability 没有可用的本地化展示说明。' : 'No localized presentation description is available for this capability.',
+    summary: locale === 'zh' ? '此能力没有可用的本地化展示说明。' : 'No localized presentation description is available for this capability.',
     unknown: true,
   }
 }

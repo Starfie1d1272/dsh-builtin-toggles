@@ -1,6 +1,6 @@
 {
   "name": "dsh-builtin-toggles",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "description": "Evidence-backed built-in capability inspector with fail-closed controls for DeepSeek Harness Web.",
   "type": "module",
   "license": "MIT",

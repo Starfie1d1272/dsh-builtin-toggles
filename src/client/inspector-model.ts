@@ -1,6 +1,22 @@
 /** Browser-only projection of the locale-independent inspection DTO. */
 
 export type VerificationStatus = 'verified' | 'drifted' | 'unverified'
+
+/**
+ * User-facing verification presentation. The API/DTO keeps the closed
+ * `verified | drifted | unverified` domain; this derived key gives the default
+ * UI a way to stop showing "unverified" for rows whose only missing evidence
+ * is an upstream-unavailable runtime identity, and to stop calling Agent
+ * Preset / unreviewed rows "unverified".
+ */
+export type VerificationPresentationKey =
+  | 'verified'
+  | 'drifted'
+  | 'no-drift'
+  | 'evidence-incomplete'
+  | 'identity-mismatch'
+  | 'unreviewed'
+  | 'not-applicable'
 export type MutationAction = 'force-enable' | 'force-disable' | 'restore-inheritance'
 export type CompositionScope = 'host' | 'agent-preset'
 
@@ -104,6 +120,28 @@ export function capabilityHasAnomaly(capability: Capability, snapshot: Inspectio
     || snapshot.compatibility.findings.some((finding) => finding.id === capability.id)
 }
 
+/**
+ * Derive the user-facing verification label for one capability.
+ *
+ * This is display-only. The server DTO's `verification` field remains the
+ * exact machine status, and diagnostics/API consumers keep using it.
+ */
+export function verificationPresentationKey(capability: Capability, snapshot: InspectionSnapshot): VerificationPresentationKey {
+  if (capability.verification === 'drifted') return 'drifted'
+  if (capability.verification === 'verified') return 'verified'
+  if (capability.compositionScope === 'agent-preset') return 'not-applicable'
+  if (!capability.official || !capability.baseline.reviewed) return 'unreviewed'
+  if (capability.baseline.expectedPackageName === null) return 'evidence-incomplete'
+  if (snapshot.compatibility.findings.some((finding) => finding.id === capability.id && finding.code === 'baseline_package_unknown')) return 'evidence-incomplete'
+  if (snapshot.compatibility.runtimeIdentity.status === 'mismatched') return 'identity-mismatch'
+  return 'no-drift'
+}
+
+/** Verification filter values that actually occur in this snapshot. */
+export function verificationFilterValues(snapshot: InspectionSnapshot): readonly VerificationPresentationKey[] {
+  return [...new Set(snapshot.capabilities.map((capability) => verificationPresentationKey(capability, snapshot)))].sort()
+}
+
 export function filterCapabilities(snapshot: InspectionSnapshot, filters: InspectorFilters, presentation?: PresentationResolver): Capability[] {
   const query = filters.query.trim().toLowerCase()
   return snapshot.capabilities.filter((capability) => {
@@ -113,7 +151,7 @@ export function filterCapabilities(snapshot: InspectionSnapshot, filters: Inspec
     if (filters.managementPlane !== 'all' && capability.managementPlane !== filters.managementPlane) return false
     if (filters.compositionScope !== 'all' && capability.compositionScope !== filters.compositionScope) return false
     if (filters.policy !== 'all' && capability.policy.status !== filters.policy) return false
-    if (filters.verification !== 'all' && capability.verification !== filters.verification) return false
+    if (filters.verification !== 'all' && verificationPresentationKey(capability, snapshot) !== filters.verification) return false
     if (filters.runtime !== 'all' && capability.runtimeState.lifecycle !== filters.runtime) return false
     return !filters.anomaliesOnly || capabilityHasAnomaly(capability, snapshot)
   })
@@ -165,6 +203,11 @@ export function capabilityFromHash(hash: string): string | null {
 
 export function deepLinkIndex(capabilities: readonly Capability[], id: string | null): number {
   return id === null ? -1 : capabilities.findIndex((capability) => capability.id === id)
+}
+
+/** True when the row would have controls under loopback/allowed access. */
+export function wouldBeEligibleLocally(capability: Capability): boolean {
+  return availableActions(capability, { access: { mutation: 'allowed' } }).length > 0
 }
 
 /** Controls are presentation only; eligibility itself is always server-computed. */
