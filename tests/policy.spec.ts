@@ -52,6 +52,24 @@ describe('classifyEntry', () => {
     assert.equal(row.reason, 'core')
   })
 
+  it('Cordis framework builtins are core, not external, based on exact name evidence', () => {
+    for (const [id, name] of [
+      ['include', 'cordis:include'],
+      ['group', 'cordis:group'],
+      ['loader', 'loader'],
+    ]) {
+      const row = classifyEntry(facts({ id, name }))
+      assert.equal(row.manageable, false, `${id}/${name}`)
+      assert.equal(row.reason, 'core', `${id}/${name}`)
+    }
+  })
+
+  it('a third-party package squatting a core id is still external, not core', () => {
+    const row = classifyEntry(facts({ id: 'include', name: '@evil/include' }))
+    assert.equal(row.manageable, false)
+    assert.equal(row.reason, 'external')
+  })
+
   it('every LOCKED_IDS entry is also locked by classification', () => {
     for (const id of LOCKED_IDS) {
       const row = classifyEntry(facts({ id, name: `@deepseek-ai/dsh-${id}` }))

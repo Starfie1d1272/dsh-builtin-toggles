@@ -10,21 +10,36 @@ const tag: CSSProperties = { borderRadius: 5, padding: '1px 6px', fontSize: 11, 
 
 export function CompatibilitySummary({ snapshot, t }: { snapshot: InspectionSnapshot; t: BuiltinTogglesTabProps['t'] }): JSX.Element {
   const findings = snapshot.compatibility.findings
+  // Runtime identity unavailability is precise machine evidence but is not a
+  // user-actionable defect. Keep it out of the default summary; it remains in
+  // the machine evidence and copied diagnostics.
+  const displayedFindings = findings.filter((finding) => finding.code !== 'runtime_release_identity_unavailable')
+  const runtimeIdentity = snapshot.compatibility.runtimeIdentity
   return <section style={box} aria-label={t('compatibilityHeading')}>
-    <div style={row}><h2 style={label}>{t('compatibilityHeading')}</h2><span style={tag}>{t(`verification${capitalize(snapshot.compatibility.status)}` as never)}</span></div>
+    <div style={row}><h2 style={label}>{t('compatibilityHeading')}</h2><span style={tag}>{compatibilityBadge(snapshot, t)}</span></div>
     <p style={muted}>{compatibilityExplanation(snapshot, t)}</p>
-    <p style={muted}>{t('runtimeIdentityLabel')}: {t(`runtimeIdentity${capitalize(snapshot.compatibility.runtimeIdentity.status)}` as never)}</p>
-    {findings.length > 0 ? <div style={row}>{findings.map((finding, index) => <span key={`${finding.code}-${finding.id ?? index}`} style={tag}>{t(`finding${capitalize(finding.code)}` as never)}{finding.id === undefined ? '' : ` · ${finding.id}`}</span>)}</div> : <p style={muted}>{t('noFindings')}</p>}
+    {runtimeIdentity.status === 'unavailable' ? null : <p style={muted}>{t('runtimeIdentityLabel')}: {t(`runtimeIdentity${capitalize(runtimeIdentity.status)}` as never)}</p>}
+    {displayedFindings.length > 0 ? <div style={row}>{displayedFindings.map((finding, index) => <span key={`${finding.code}-${finding.id ?? index}`} style={tag}>{t(`finding${capitalize(finding.code)}` as never)}{finding.id === undefined ? '' : ` · ${finding.id}`}</span>)}</div> : <p style={muted}>{t('noFindings')}</p>}
   </section>
 }
 
 function capitalize(value: string): string { return value.replace(/(^|_)([a-z])/g, (_all, _prefix, char: string) => char.toUpperCase()) }
 
+function compatibilityBadge(snapshot: InspectionSnapshot, t: BuiltinTogglesTabProps['t']): string {
+  if (snapshot.compatibility.status === 'drifted') {
+    return snapshot.compatibility.runtimeIdentity.status === 'mismatched' ? t('verificationIdentityMismatch') : t('compatibilityStatusDrifted')
+  }
+  if (snapshot.compatibility.status === 'verified') return t('verificationVerified')
+  if (snapshot.compatibility.findings.some((finding) => finding.code === 'baseline_package_unknown')) return t('verificationUnverified')
+  if (snapshot.compatibility.findings.some((finding) => finding.code !== 'runtime_release_identity_unavailable')) return t('verificationUnverified')
+  return t('compatibilityStatusNoDrift')
+}
+
 function compatibilityExplanation(snapshot: InspectionSnapshot, t: BuiltinTogglesTabProps['t']): string {
-  if (snapshot.compatibility.status === 'drifted') return t('compatibilityExplainDrifted')
   if (snapshot.compatibility.runtimeIdentity.status === 'mismatched') return t('compatibilityExplainIdentityMismatch')
+  if (snapshot.compatibility.status === 'drifted') return t('compatibilityExplainDrifted')
+  if (snapshot.compatibility.status === 'verified') return t('compatibilityExplainVerified')
   if (snapshot.compatibility.findings.some((finding) => finding.code === 'baseline_package_unknown')) return t('compatibilityExplainEvidenceIncomplete')
   if (snapshot.compatibility.findings.some((finding) => finding.code !== 'runtime_release_identity_unavailable')) return t('compatibilityExplainUnverified')
-  if (snapshot.compatibility.runtimeIdentity.status === 'unavailable') return t('compatibilityExplainIdentityUnavailable')
-  return t('compatibilityExplainUnverified')
+  return t('compatibilityExplainNoDrift')
 }

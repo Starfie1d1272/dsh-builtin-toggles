@@ -1,7 +1,7 @@
 import type { CSSProperties, JSX } from 'react'
 import type { BuiltinTogglesTabProps } from './BuiltinTogglesTab.tsx'
 import { categoryLabel, lifecycleLabel, planeLabel, policyLabel, verificationLabel } from './labels.ts'
-import type { InspectorFilters as Filters, InspectionSnapshot } from './inspector-model.ts'
+import { verificationFilterValues, type InspectorFilters as Filters, type InspectionSnapshot } from './inspector-model.ts'
 
 const wrap: CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 8 }
 const control: CSSProperties = { boxSizing: 'border-box', minWidth: 0, border: '1px solid var(--dsw-alias-border-l2)', borderRadius: 6, background: 'var(--dsw-alias-bg-layer-1)', color: 'var(--dsw-alias-label-primary)', font: 'inherit', fontSize: 12, padding: '6px 8px' }
@@ -17,7 +17,7 @@ export function InspectorFilters({ snapshot, filters, onChange, t }: { snapshot:
     {select('managementPlane', planes, t('filterManagementPlane'), (value) => planeLabel(t, value))}
     {select('compositionScope', ['host', 'agent-preset'], t('filterCompositionScope'), (value) => planeLabel(t, value))}
     {select('policy', ['manageable', 'locked'], t('filterPolicy'), (value) => policyLabel(t, value))}
-    {select('verification', ['verified', 'drifted', 'unverified'], t('filterVerification'), (value) => verificationLabel(t, value))}
+    {select('verification', verificationFilterValues(snapshot), t('filterVerification'), (value) => verificationLabel(t, value))}
     {select('runtime', lifecycles, t('filterRuntime'), (value) => lifecycleLabel(t, value))}
     <label style={{ ...control, display: 'flex', gap: 6, alignItems: 'center' }}><input type="checkbox" checked={filters.anomaliesOnly} onChange={(event) => onChange({ ...filters, anomaliesOnly: event.target.checked })} />{t('filterAnomalies')}</label>
   </div>
