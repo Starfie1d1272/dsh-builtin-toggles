@@ -107,6 +107,23 @@ export const SELF_IDS: ReadonlySet<string> = new Set(['builtin-toggles'])
 /** The module specifier that identifies an official built-in package. */
 export const OFFICIAL_PACKAGE_PREFIX = '@deepseek-ai/'
 
+/**
+ * Exact Cordis/DSH framework identities, not bare-id heuristics.
+ *
+ * `cordis:*` is the Loader's builtin specifier scheme, and `loader` is the
+ * Cordis Loader service's own module name. These names are stronger evidence
+ * than a bare id; a third-party package can still pick the id `include`, but
+ * its module name will not be `cordis:include`, so it keeps the `external`
+ * reason. The `LOCKED_IDS.has(id)` requirement below prevents an unknown
+ * bare-id squat from borrowing the core label.
+ */
+export const CORDIS_FRAMEWORK_NAMES: ReadonlySet<string> = new Set([
+  'loader',
+  'cordis:loader',
+  'cordis:include',
+  'cordis:group',
+])
+
 /** Why an entry is not manageable; undefined means it is manageable. */
 export type LockReason = 'core' | 'unlisted' | 'external' | 'self' | 'agent-preset'
 
@@ -132,6 +149,12 @@ export interface EntryFacts {
 export function classifyEntry(entry: EntryFacts): SnapshotPlugin {
   if (SELF_IDS.has(entry.id)) {
     return { ...entry, manageable: false, reason: 'self' }
+  }
+  // Framework identity is established by the exact Cordis builtin/service
+  // module name AND a known core id. This is not a bare-id shortcut: an
+  // external package squatting on a core id keeps the `external` reason.
+  if (CORDIS_FRAMEWORK_NAMES.has(entry.name) && LOCKED_IDS.has(entry.id)) {
+    return { ...entry, manageable: false, reason: 'core' }
   }
   if (!entry.name.startsWith(OFFICIAL_PACKAGE_PREFIX)) {
     return { ...entry, manageable: false, reason: 'external' }
