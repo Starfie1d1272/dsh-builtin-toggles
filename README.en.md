@@ -2,6 +2,13 @@
 
 [简体中文](README.md) | English
 
+> [!WARNING]
+> **Archived / Unmaintained**
+>
+> This repository is archived and no longer actively maintained. The last reviewed baseline is DSH `0.1.0-rc.6`; modern DeepSeek Harness releases now provide native plugin management, Agent Preset scope handling, and `cordis_inspect`, so users should prefer the official built-in tooling.
+>
+> Historical releases remain available on npm and GitHub. If uninstalling from an existing `web` profile, run **Restore inheritance** on any item previously forced by this plugin before following the [Uninstall](#uninstall) steps below.
+
 An evidence-backed built-in capability Inspector for DeepSeek Harness Web. Its nine reviewed UI controls are a deliberately tiny, fail-closed adjunct—not a general plugin switcher.
 
 > Unofficial community plugin. It is not affiliated with or supported by DeepSeek Harness.
