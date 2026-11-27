@@ -2,6 +2,13 @@
 
 简体中文 | [English](README.en.md)
 
+> [!WARNING]
+> **已归档 / 停止维护（Archived）**
+>
+> 本项目已停止主动维护并归档。最后审查基线为 DSH `0.1.0-rc.6`；现代版本的 DeepSeek Harness 已原生提供插件管理页面、Agent 预设作用域区分以及 `cordis_inspect` 检查工具，建议优先使用官方内置能力。
+>
+> 历史版本仍可通过 npm 与 Git 保留访问；如需从现有 `web` profile 卸载，请先在界面中对本插件强制开关过的条目执行 **恢复继承**，再按下方 [卸载](#卸载) 说明移除。
+
 DeepSeek Harness Web 的 evidence-backed 内置 capability Inspector；9 个经过审阅的 UI controls 只是极窄、fail-closed 的附加能力。
 
 > 非官方社区插件（unofficial community plugin）。与 DeepSeek Harness 官方无关，不受官方支持。
